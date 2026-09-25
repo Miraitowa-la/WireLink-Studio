@@ -148,7 +148,6 @@ export const projectSchema = z.looseObject({
   assets: z.array(imageAssetSchema),
   viewPreferences: z
     .looseObject({
-      wireStyle: z.enum(['curve', 'orthogonal']),
       showLabels: z.boolean(),
     })
     .optional(),

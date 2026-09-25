@@ -147,10 +147,7 @@ function Canvas({
         sourceHandle: wire.source.terminalId,
         target: wire.target.deviceId,
         targetHandle: wire.target.terminalId,
-        type:
-          project.viewPreferences?.wireStyle === 'orthogonal'
-            ? 'step'
-            : 'default',
+        type: 'step',
         label:
           project.viewPreferences?.showLabels === false
             ? undefined

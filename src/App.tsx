@@ -412,27 +412,6 @@ export default function App() {
           <span className="dirty-indicator">{dirty ? '未保存' : '已保存'}</span>
         </div>
         <nav className="toolbar-actions" aria-label="工程操作">
-          <button
-            type="button"
-            onClick={() =>
-              changeProject((current) => ({
-                ...current,
-                viewPreferences: {
-                  ...current.viewPreferences,
-                  wireStyle:
-                    current.viewPreferences?.wireStyle === 'orthogonal'
-                      ? 'curve'
-                      : 'orthogonal',
-                  showLabels: current.viewPreferences?.showLabels ?? true,
-                },
-              }))
-            }
-          >
-            走线：
-            {project.viewPreferences?.wireStyle === 'orthogonal'
-              ? '正交'
-              : '曲线'}
-          </button>
           <button type="button" onClick={backToWelcome}>
             新建
           </button>

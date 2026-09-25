@@ -130,6 +130,16 @@ describe('project file model', () => {
     ).toThrow('工程结构无效：wires 缺少必需字段');
   });
 
+  test('accepts a project saved with the former wire style preference', () => {
+    const project = {
+      ...createEmptyProject(),
+      viewPreferences: { wireStyle: 'curve', showLabels: true },
+    };
+    expect(
+      parseProjectFile(JSON.stringify(project)).viewPreferences?.showLabels,
+    ).toBe(true);
+  });
+
   test('rejects invalid terminal layout and duplicate IDs', () => {
     const project = createEmptyProject();
     project.deviceLibrary = [
