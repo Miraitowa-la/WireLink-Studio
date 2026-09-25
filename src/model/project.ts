@@ -60,6 +60,7 @@ export const deviceTemplateSchema = z.looseObject({
   height: size.shape.height,
   appearance: deviceAppearanceSchema,
   terminals: z.array(terminalDefinitionSchema),
+  note: z.string().optional(),
 });
 export type DeviceTemplate = z.infer<typeof deviceTemplateSchema>;
 
