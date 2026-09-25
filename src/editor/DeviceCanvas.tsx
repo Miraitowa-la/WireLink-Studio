@@ -10,6 +10,8 @@ import {
   ReactFlowProvider,
   useNodesState,
   useReactFlow,
+  type Connection,
+  type Edge,
   type Node,
   type NodeProps,
 } from '@xyflow/react';
@@ -18,6 +20,7 @@ import type {
   Project,
   Side,
   TerminalType,
+  WireEndpoint,
 } from '../model/project';
 import { getDeviceSize, SIDES } from './device';
 
@@ -68,7 +71,7 @@ function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
                 type="source"
                 id={terminal.id}
                 position={positions[side]}
-                isConnectable={false}
+                isConnectable
                 className="terminal-handle"
                 style={{
                   ...style,
@@ -96,7 +99,10 @@ const nodeTypes = { device: DeviceNode };
 interface CanvasProps {
   project: Project;
   selectedDeviceId: string | null;
+  selectedWireId: string | null;
   onSelectDevice(id: string | null): void;
+  onSelectWire(id: string | null): void;
+  onConnect(source: WireEndpoint, target: WireEndpoint): void;
   onAddDevice(templateId: string, position: { x: number; y: number }): void;
   onMoveDevice(id: string, position: { x: number; y: number }): void;
 }
@@ -104,11 +110,14 @@ interface CanvasProps {
 function Canvas({
   project,
   selectedDeviceId,
+  selectedWireId,
   onSelectDevice,
+  onSelectWire,
+  onConnect,
   onAddDevice,
   onMoveDevice,
 }: CanvasProps) {
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const projectNodes = useMemo<DeviceFlowNode[]>(
     () =>
       project.devices.map((device) => ({
@@ -123,6 +132,42 @@ function Canvas({
   const [nodes, setNodes, onNodesChange] =
     useNodesState<DeviceFlowNode>(projectNodes);
   useEffect(() => setNodes(projectNodes), [projectNodes, setNodes]);
+  useEffect(() => {
+    if (!project.devices.length) return;
+    const frame = requestAnimationFrame(() => {
+      void fitView({ padding: 0.2, maxZoom: 1, duration: 200 });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [project.devices.length, fitView]);
+  const edges = useMemo<Edge[]>(
+    () =>
+      project.wires.map((wire) => ({
+        id: wire.id,
+        source: wire.source.deviceId,
+        sourceHandle: wire.source.terminalId,
+        target: wire.target.deviceId,
+        targetHandle: wire.target.terminalId,
+        type:
+          project.viewPreferences?.wireStyle === 'orthogonal'
+            ? 'step'
+            : 'default',
+        label:
+          project.viewPreferences?.showLabels === false
+            ? undefined
+            : [wire.number, wire.name].filter(Boolean).join(' · ') || undefined,
+        style: { stroke: wire.color || '#64748b', strokeWidth: 2 },
+        selected: wire.id === selectedWireId,
+      })),
+    [project.wires, project.viewPreferences, selectedWireId],
+  );
+
+  function connect(connection: Connection) {
+    if (!connection.sourceHandle || !connection.targetHandle) return;
+    onConnect(
+      { deviceId: connection.source, terminalId: connection.sourceHandle },
+      { deviceId: connection.target, terminalId: connection.targetHandle },
+    );
+  }
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -147,14 +192,25 @@ function Canvas({
       <ReactFlow
         nodes={nodes}
         onNodesChange={onNodesChange}
-        edges={[]}
+        edges={edges}
         nodeTypes={nodeTypes}
         fitView
+        fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
         connectionMode={ConnectionMode.Loose}
-        onNodeClick={(_, node) => onSelectDevice(node.id)}
-        onPaneClick={() => onSelectDevice(null)}
+        onNodeClick={(_, node) => {
+          onSelectWire(null);
+          onSelectDevice(node.id);
+        }}
+        onEdgeClick={(_, edge) => {
+          onSelectDevice(null);
+          onSelectWire(edge.id);
+        }}
+        onPaneClick={() => {
+          onSelectDevice(null);
+          onSelectWire(null);
+        }}
         onNodeDragStop={(_, node) => onMoveDevice(node.id, node.position)}
-        nodesConnectable={false}
+        onConnect={connect}
         deleteKeyCode={null}
         ariaLabelConfig={{
           'node.a11yDescription.default': '按回车选择设备，方向键移动设备',

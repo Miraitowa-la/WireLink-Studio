@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import DeviceCanvas, { TEMPLATE_DRAG_TYPE } from './editor/DeviceCanvas';
+import { addWire } from './editor/wire';
 import {
   addDevice,
   createDeviceTemplate,
@@ -22,6 +23,8 @@ import {
   type DeviceTemplate,
   type Project,
   type TerminalType,
+  type Wire,
+  type WireEndpoint,
 } from './model/project';
 
 type Editor =
@@ -34,6 +37,7 @@ export default function App() {
   const [projectName, setProjectName] = useState('未命名工程');
   const [dirty, setDirty] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<Status>(null);
   const fileHandle = useRef<ProjectFileHandle | null>(null);
@@ -86,6 +90,7 @@ export default function App() {
     fileHandle.current = null;
     setDirty(true);
     setSelectedId(null);
+    setSelectedWireId(null);
     setStatus({ kind: 'info', text: '空工程已创建，请显式保存到文件' });
   }
 
@@ -96,6 +101,7 @@ export default function App() {
     fileHandle.current = null;
     setDirty(false);
     setSelectedId(null);
+    setSelectedWireId(null);
     setStatus(null);
   }
 
@@ -106,6 +112,7 @@ export default function App() {
     fileHandle.current = handle;
     setDirty(false);
     setSelectedId(null);
+    setSelectedWireId(null);
     setStatus({ kind: 'info', text: `已打开工程“${next.name}”` });
   }
 
@@ -245,12 +252,15 @@ export default function App() {
       (item) => item.id === templateId,
     );
     if (!template) return;
-    const offset = project.devices.length * 32;
+    const index = project.devices.length;
     changeProject((current) =>
       addDevice(
         current,
         template,
-        position ?? { x: 80 + offset, y: 80 + offset },
+        position ?? {
+          x: 80 + (index % 3) * 320,
+          y: 80 + Math.floor(index / 3) * 240,
+        },
       ),
     );
   }
@@ -260,6 +270,27 @@ export default function App() {
       ...current,
       devices: current.devices.map((device) =>
         device.id === id ? { ...device, ...patch } : device,
+      ),
+    }));
+  }
+
+  function connectTerminals(source: WireEndpoint, target: WireEndpoint) {
+    if (!project) return;
+    try {
+      const next = addWire(project, source, target);
+      changeProject(() => next);
+      setSelectedId(null);
+      setSelectedWireId(next.wires.at(-1)!.id);
+    } catch (error) {
+      setStatus({ kind: 'error', text: errorMessage(error) });
+    }
+  }
+
+  function updateWire(id: string, patch: Partial<Wire>) {
+    changeProject((current) => ({
+      ...current,
+      wires: current.wires.map((wire) =>
+        wire.id === id ? { ...wire, ...patch } : wire,
       ),
     }));
   }
@@ -296,12 +327,16 @@ export default function App() {
       };
     });
     setSelectedId(null);
+    setSelectedWireId(null);
   }
 
   const currentTypes = project?.terminalTypes ?? [];
   const currentTemplates = project?.deviceLibrary ?? [];
   const selectedDevice = project?.devices.find(
     (device) => device.id === selectedId,
+  );
+  const selectedWire = project?.wires.find(
+    (wire) => wire.id === selectedWireId,
   );
   const fileInputElement = (
     <input
@@ -377,6 +412,27 @@ export default function App() {
           <span className="dirty-indicator">{dirty ? '未保存' : '已保存'}</span>
         </div>
         <nav className="toolbar-actions" aria-label="工程操作">
+          <button
+            type="button"
+            onClick={() =>
+              changeProject((current) => ({
+                ...current,
+                viewPreferences: {
+                  ...current.viewPreferences,
+                  wireStyle:
+                    current.viewPreferences?.wireStyle === 'orthogonal'
+                      ? 'curve'
+                      : 'orthogonal',
+                  showLabels: current.viewPreferences?.showLabels ?? true,
+                },
+              }))
+            }
+          >
+            走线：
+            {project.viewPreferences?.wireStyle === 'orthogonal'
+              ? '正交'
+              : '曲线'}
+          </button>
           <button type="button" onClick={backToWelcome}>
             新建
           </button>
@@ -509,12 +565,17 @@ export default function App() {
         <section className="canvas-panel" aria-label="接线画布">
           <div className="canvas-heading">
             <span>接线画布</span>
-            <span>{project.devices.length} 台设备</span>
+            <span>
+              {project.devices.length} 台设备 · {project.wires.length} 条导线
+            </span>
           </div>
           <DeviceCanvas
             project={project}
             selectedDeviceId={selectedId}
+            selectedWireId={selectedWireId}
             onSelectDevice={setSelectedId}
+            onSelectWire={setSelectedWireId}
+            onConnect={connectTerminals}
             onAddDevice={placeDevice}
             onMoveDevice={(id, position) => updateDevice(id, { position })}
           />
@@ -523,9 +584,85 @@ export default function App() {
         <aside className="properties" aria-label="属性面板">
           <div className="sidebar-heading">
             <h2>属性</h2>
-            <p>{selectedDevice ? '设备实例' : '选择画布中的设备'}</p>
+            <p>
+              {selectedWire
+                ? '普通导线'
+                : selectedDevice
+                  ? '设备实例'
+                  : '选择画布中的设备或导线'}
+            </p>
           </div>
-          {selectedDevice ? (
+          {selectedWire ? (
+            <div className="properties-body">
+              <p className="hint">
+                {
+                  project.devices.find(
+                    (device) => device.id === selectedWire.source.deviceId,
+                  )?.name
+                }
+                {' → '}
+                {
+                  project.devices.find(
+                    (device) => device.id === selectedWire.target.deviceId,
+                  )?.name
+                }
+              </p>
+              <label>
+                线号
+                <input
+                  value={selectedWire.number ?? ''}
+                  onChange={(event) =>
+                    updateWire(selectedWire.id, { number: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                名称
+                <input
+                  value={selectedWire.name ?? ''}
+                  onChange={(event) =>
+                    updateWire(selectedWire.id, { name: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                颜色
+                <input
+                  type="color"
+                  value={selectedWire.color ?? '#64748b'}
+                  onChange={(event) =>
+                    updateWire(selectedWire.id, { color: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                备注
+                <textarea
+                  rows={4}
+                  value={selectedWire.note ?? ''}
+                  onChange={(event) =>
+                    updateWire(selectedWire.id, { note: event.target.value })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="danger-text"
+                onClick={() => {
+                  if (!window.confirm('删除这条导线？')) return;
+                  changeProject((current) => ({
+                    ...current,
+                    wires: current.wires.filter(
+                      (wire) => wire.id !== selectedWire.id,
+                    ),
+                  }));
+                  setSelectedWireId(null);
+                }}
+              >
+                删除导线
+              </button>
+            </div>
+          ) : selectedDevice ? (
             <div className="properties-body">
               <label>
                 实例名称
@@ -648,7 +785,7 @@ export default function App() {
             </div>
           ) : (
             <p className="empty-hint properties-placeholder">
-              点击设备以编辑名称、尺寸与备注。
+              点击设备或导线以编辑属性。
             </p>
           )}
         </aside>
