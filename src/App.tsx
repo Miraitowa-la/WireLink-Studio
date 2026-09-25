@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import DeviceCanvas, { TEMPLATE_DRAG_TYPE } from './editor/DeviceCanvas';
+import InspectionPanel from './editor/InspectionPanel';
+import type { ValidationIssue } from './editor/inspection';
 import { addWire } from './editor/wire';
 import {
   addDevice,
@@ -38,11 +40,21 @@ export default function App() {
   const [dirty, setDirty] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
+  const [focusTarget, setFocusTarget] = useState<{
+    kind: 'device' | 'wire';
+    id: string;
+  } | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<Status>(null);
   const fileHandle = useRef<ProjectFileHandle | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
-  const revision = useRef(0);
+  const projectRef = useRef<Project | null>(null);
+  const savedProject = useRef<Project | null>(null);
+  const projectSession = useRef(0);
+  const history = useRef<{ past: Project[]; future: Project[] }>({
+    past: [],
+    future: [],
+  });
   const saving = useRef(false);
 
   useEffect(() => {
@@ -57,6 +69,11 @@ export default function App() {
 
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
+      const target = event.target;
+      const editing =
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
       if (
         (event.ctrlKey || event.metaKey) &&
         event.key.toLowerCase() === 's' &&
@@ -64,6 +81,23 @@ export default function App() {
       ) {
         event.preventDefault();
         void save();
+      } else if ((event.ctrlKey || event.metaKey) && !editing && project) {
+        const key = event.key.toLowerCase();
+        if (key === 'z' || key === 'y') {
+          event.preventDefault();
+          if (key === 'y' || event.shiftKey) redo();
+          else undo();
+        }
+      } else if (
+        !editing &&
+        project &&
+        (event.key === 'Delete' || event.key === 'Backspace')
+      ) {
+        if (selectedWireId || selectedId) {
+          event.preventDefault();
+          if (selectedWireId) deleteSelectedWire();
+          else deleteSelectedDevice();
+        }
       }
     };
     window.addEventListener('keydown', shortcut);
@@ -71,10 +105,44 @@ export default function App() {
   });
 
   function changeProject(update: (current: Project) => Project) {
-    setProject((current) => (current ? update(current) : current));
-    revision.current += 1;
-    setDirty(true);
+    const current = projectRef.current;
+    if (!current) return;
+    const next = update(current);
+    if (next === current) return;
+    history.current.past.push(current);
+    if (history.current.past.length > 50) history.current.past.shift();
+    history.current.future = [];
+    projectRef.current = next;
+    setProject(next);
+    setDirty(next !== savedProject.current);
     setStatus(null);
+  }
+
+  function restoreProject(next: Project) {
+    projectRef.current = next;
+    setProject(next);
+    setDirty(next !== savedProject.current);
+    setStatus(null);
+    setSelectedId((id) =>
+      next.devices.some((device) => device.id === id) ? id : null,
+    );
+    setSelectedWireId((id) =>
+      next.wires.some((wire) => wire.id === id) ? id : null,
+    );
+  }
+
+  function undo() {
+    const previous = history.current.past.pop();
+    if (!previous || !projectRef.current) return;
+    history.current.future.push(projectRef.current);
+    restoreProject(previous);
+  }
+
+  function redo() {
+    const next = history.current.future.pop();
+    if (!next || !projectRef.current) return;
+    history.current.past.push(projectRef.current);
+    restoreProject(next);
   }
 
   function canReplaceProject() {
@@ -85,46 +153,60 @@ export default function App() {
 
   function newProject() {
     if (!canReplaceProject()) return;
-    setProject(createEmptyProject(projectName.trim() || '未命名工程'));
-    revision.current = 1;
+    const next = createEmptyProject(projectName.trim() || '未命名工程');
+    projectRef.current = next;
+    savedProject.current = null;
+    projectSession.current += 1;
+    history.current = { past: [], future: [] };
+    setProject(next);
     fileHandle.current = null;
     setDirty(true);
     setSelectedId(null);
     setSelectedWireId(null);
+    setFocusTarget(null);
     setStatus({ kind: 'info', text: '空工程已创建，请显式保存到文件' });
   }
 
   function backToWelcome() {
     if (!canReplaceProject()) return;
     setProject(null);
-    revision.current = 0;
+    projectRef.current = null;
+    savedProject.current = null;
+    projectSession.current += 1;
+    history.current = { past: [], future: [] };
     fileHandle.current = null;
     setDirty(false);
     setSelectedId(null);
     setSelectedWireId(null);
+    setFocusTarget(null);
     setStatus(null);
   }
 
   function acceptProject(next: Project, handle: ProjectFileHandle | null) {
+    projectRef.current = next;
+    savedProject.current = next;
+    projectSession.current += 1;
+    history.current = { past: [], future: [] };
     setProject(next);
-    revision.current = 0;
     setProjectName(next.name);
     fileHandle.current = handle;
     setDirty(false);
     setSelectedId(null);
     setSelectedWireId(null);
+    setFocusTarget(null);
     setStatus({ kind: 'info', text: `已打开工程“${next.name}”` });
   }
 
   async function openProject() {
     if (!canReplaceProject()) return;
+    const session = projectSession.current;
     if (!hasFilePicker()) {
       fileInput.current?.click();
       return;
     }
     try {
       const { project: next, handle } = await openProjectWithPicker();
-      acceptProject(next, handle);
+      if (projectSession.current === session) acceptProject(next, handle);
     } catch (error) {
       if (!isPickerCancel(error))
         setStatus({ kind: 'error', text: errorMessage(error) });
@@ -132,24 +214,30 @@ export default function App() {
   }
 
   async function onFileSelected(event: ChangeEvent<HTMLInputElement>) {
+    const session = projectSession.current;
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
     try {
-      acceptProject(await readProjectFile(file), null);
+      const next = await readProjectFile(file);
+      if (projectSession.current === session) acceptProject(next, null);
     } catch (error) {
       setStatus({ kind: 'error', text: errorMessage(error) });
     }
   }
 
   async function save() {
-    if (!project || saving.current) return;
+    const snapshot = projectRef.current;
+    if (!snapshot || saving.current) return;
     saving.current = true;
-    const savedRevision = revision.current;
+    const session = projectSession.current;
     try {
-      fileHandle.current = await saveProjectFile(project, fileHandle.current);
-      const changedDuringSave = revision.current !== savedRevision;
-      if (!changedDuringSave) setDirty(false);
+      const handle = await saveProjectFile(snapshot, fileHandle.current);
+      if (projectSession.current !== session) return;
+      fileHandle.current = handle;
+      savedProject.current = snapshot;
+      const changedDuringSave = projectRef.current !== snapshot;
+      setDirty(changedDuringSave);
       setStatus({
         kind: 'info',
         text: changedDuringSave
@@ -159,7 +247,7 @@ export default function App() {
             : '工程文件已下载',
       });
     } catch (error) {
-      if (!isPickerCancel(error))
+      if (projectSession.current === session && !isPickerCancel(error))
         setStatus({ kind: 'error', text: errorMessage(error) });
     } finally {
       saving.current = false;
@@ -275,9 +363,10 @@ export default function App() {
   }
 
   function connectTerminals(source: WireEndpoint, target: WireEndpoint) {
-    if (!project) return;
+    const current = projectRef.current;
+    if (!current) return;
     try {
-      const next = addWire(project, source, target);
+      const next = addWire(current, source, target);
       changeProject(() => next);
       setSelectedId(null);
       setSelectedWireId(next.wires.at(-1)!.id);
@@ -328,6 +417,27 @@ export default function App() {
     });
     setSelectedId(null);
     setSelectedWireId(null);
+  }
+
+  function deleteSelectedWire() {
+    if (!selectedWireId || !window.confirm('删除这条导线？')) return;
+    changeProject((current) => ({
+      ...current,
+      wires: current.wires.filter((wire) => wire.id !== selectedWireId),
+    }));
+    setSelectedWireId(null);
+  }
+
+  function selectIssue(issue: ValidationIssue) {
+    if (issue.wireId) {
+      setSelectedWireId(issue.wireId);
+      setSelectedId(null);
+      setFocusTarget({ kind: 'wire', id: issue.wireId });
+    } else if (issue.deviceId) {
+      setSelectedId(issue.deviceId);
+      setSelectedWireId(null);
+      setFocusTarget({ kind: 'device', id: issue.deviceId });
+    }
   }
 
   const currentTypes = project?.terminalTypes ?? [];
@@ -412,6 +522,22 @@ export default function App() {
           <span className="dirty-indicator">{dirty ? '未保存' : '已保存'}</span>
         </div>
         <nav className="toolbar-actions" aria-label="工程操作">
+          <button
+            type="button"
+            disabled={history.current.past.length === 0}
+            onClick={undo}
+            title="Ctrl+Z"
+          >
+            撤销
+          </button>
+          <button
+            type="button"
+            disabled={history.current.future.length === 0}
+            onClick={redo}
+            title="Ctrl+Y / Ctrl+Shift+Z"
+          >
+            重做
+          </button>
           <button type="button" onClick={backToWelcome}>
             新建
           </button>
@@ -552,8 +678,15 @@ export default function App() {
             project={project}
             selectedDeviceId={selectedId}
             selectedWireId={selectedWireId}
-            onSelectDevice={setSelectedId}
-            onSelectWire={setSelectedWireId}
+            focusTarget={focusTarget}
+            onSelectDevice={(id) => {
+              setSelectedId(id);
+              setFocusTarget(null);
+            }}
+            onSelectWire={(id) => {
+              setSelectedWireId(id);
+              setFocusTarget(null);
+            }}
             onConnect={connectTerminals}
             onAddDevice={placeDevice}
             onMoveDevice={(id, position) => updateDevice(id, { position })}
@@ -627,16 +760,7 @@ export default function App() {
               <button
                 type="button"
                 className="danger-text"
-                onClick={() => {
-                  if (!window.confirm('删除这条导线？')) return;
-                  changeProject((current) => ({
-                    ...current,
-                    wires: current.wires.filter(
-                      (wire) => wire.id !== selectedWire.id,
-                    ),
-                  }));
-                  setSelectedWireId(null);
-                }}
+                onClick={deleteSelectedWire}
               >
                 删除导线
               </button>
@@ -769,6 +893,15 @@ export default function App() {
           )}
         </aside>
       </div>
+      <InspectionPanel
+        project={project}
+        onSelectIssue={selectIssue}
+        onSelectWire={(id) => {
+          setSelectedWireId(id);
+          setSelectedId(null);
+          setFocusTarget({ kind: 'wire', id });
+        }}
+      />
       <footer className="bottom-bar">
         <span>工程版本 {project.version}</span>
         {status && (

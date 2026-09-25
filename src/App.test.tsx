@@ -18,3 +18,18 @@ test('starts with an empty project instead of sample devices', () => {
     screen.queryByRole('button', { name: /走线/ }),
   ).not.toBeInTheDocument();
 });
+
+test('undoes and redoes project edits', () => {
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建工程' }));
+  const name = screen.getByRole('textbox', { name: '工程名称' });
+  fireEvent.change(name, { target: { value: '接线方案' } });
+  expect(name).toHaveValue('接线方案');
+  fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+  expect(name).toHaveValue('未命名工程');
+  fireEvent.click(screen.getByRole('button', { name: '重做' }));
+  expect(name).toHaveValue('接线方案');
+  fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+  fireEvent.change(name, { target: { value: '另一个方案' } });
+  expect(screen.getByRole('button', { name: '重做' })).toBeDisabled();
+});

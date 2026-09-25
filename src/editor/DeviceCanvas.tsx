@@ -100,6 +100,7 @@ interface CanvasProps {
   project: Project;
   selectedDeviceId: string | null;
   selectedWireId: string | null;
+  focusTarget: { kind: 'device' | 'wire'; id: string } | null;
   onSelectDevice(id: string | null): void;
   onSelectWire(id: string | null): void;
   onConnect(source: WireEndpoint, target: WireEndpoint): void;
@@ -111,13 +112,14 @@ function Canvas({
   project,
   selectedDeviceId,
   selectedWireId,
+  focusTarget,
   onSelectDevice,
   onSelectWire,
   onConnect,
   onAddDevice,
   onMoveDevice,
 }: CanvasProps) {
-  const { screenToFlowPosition, fitView } = useReactFlow();
+  const { screenToFlowPosition, fitView, setCenter } = useReactFlow();
   const projectNodes = useMemo<DeviceFlowNode[]>(
     () =>
       project.devices.map((device) => ({
@@ -139,6 +141,29 @@ function Canvas({
     });
     return () => cancelAnimationFrame(frame);
   }, [project.devices.length, fitView]);
+  useEffect(() => {
+    if (!focusTarget) return;
+    const centerOf = (id: string) => {
+      const device = project.devices.find((item) => item.id === id);
+      if (!device) return null;
+      const size = getDeviceSize(device);
+      return {
+        x: device.position.x + size.width / 2,
+        y: device.position.y + size.height / 2,
+      };
+    };
+    let point = focusTarget.kind === 'device' ? centerOf(focusTarget.id) : null;
+    if (focusTarget.kind === 'wire') {
+      const wire = project.wires.find((item) => item.id === focusTarget.id);
+      const source = wire && centerOf(wire.source.deviceId);
+      const target = wire && centerOf(wire.target.deviceId);
+      point =
+        source && target
+          ? { x: (source.x + target.x) / 2, y: (source.y + target.y) / 2 }
+          : source || target || null;
+    }
+    if (point) void setCenter(point.x, point.y, { zoom: 1, duration: 200 });
+  }, [focusTarget, setCenter]);
   const edges = useMemo<Edge[]>(
     () =>
       project.wires.map((wire) => ({

@@ -84,7 +84,7 @@ export async function saveProjectFile(
   return destination;
 }
 
-function safeProjectName(name: string): string {
+export function safeProjectName(name: string): string {
   return name.trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_') || '未命名工程';
 }
 

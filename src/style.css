@@ -179,9 +179,9 @@ p {
 
 .editor-shell {
   display: grid;
-  grid-template-rows: 58px minmax(0, 1fr) 34px;
+  grid-template-rows: 58px minmax(0, 1fr) 210px 34px;
   height: 100vh;
-  min-height: 540px;
+  min-height: 650px;
 }
 .topbar {
   display: flex;
@@ -491,6 +491,113 @@ p {
   color: #8a9caf;
   font-size: 11px;
 }
+.inspection-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
+  border-top: 1px solid #d9e3ed;
+  background: #fff;
+}
+.inspection-tabs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 14px;
+  border-bottom: 1px solid #e6edf4;
+}
+.inspection-tabs > button {
+  border: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.inspection-tabs > button[aria-pressed='true'] {
+  color: #1764b1;
+  background: #e9f3ff;
+  font-weight: 700;
+}
+.inspection-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.inspection-tools input {
+  width: 210px;
+  padding: 5px 7px;
+  font-size: 11px;
+}
+.inspection-tools button {
+  white-space: nowrap;
+  font-size: 11px;
+  padding: 5px 8px;
+}
+.inspection-content {
+  overflow: auto;
+  min-height: 0;
+  padding: 6px 14px;
+}
+.inspection-content .empty-hint {
+  margin: 4px 0;
+}
+.issue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.issue-list button {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid #edf2f7;
+  border-radius: 0;
+  padding: 7px;
+  font-size: 11px;
+}
+.issue-level {
+  flex: none;
+  font-weight: 700;
+}
+.issue-error {
+  color: #b42334;
+}
+.issue-warning {
+  color: #9a6319;
+}
+.terminal-table-wrap {
+  overflow-x: auto;
+}
+.terminal-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.terminal-table th,
+.terminal-table td {
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid #edf2f7;
+}
+.terminal-table th {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  color: #536980;
+}
+.terminal-table tbody tr:hover {
+  background: #f2f8ff;
+}
+.table-link {
+  border: 0;
+  padding: 0;
+  color: #1764b1;
+  background: transparent;
+  font-size: inherit;
+}
 .bottom-bar .status {
   overflow: hidden;
   white-space: nowrap;
@@ -633,7 +740,7 @@ p {
   .editor-shell {
     height: auto;
     min-height: 100vh;
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto 210px auto;
   }
   .topbar {
     flex-wrap: wrap;
@@ -656,5 +763,19 @@ p {
   }
   .side-grid {
     grid-template-columns: 1fr;
+  }
+  .inspection-tabs {
+    flex-wrap: wrap;
+    height: auto;
+  }
+  .inspection-panel {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .inspection-tools {
+    width: 100%;
+  }
+  .inspection-tools input {
+    flex: 1;
+    width: 0;
   }
 }
