@@ -2,16 +2,10 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import DeviceCanvas, { TEMPLATE_DRAG_TYPE } from './editor/DeviceCanvas';
 import {
   addDevice,
-  copyTemplateToProject,
   createDeviceTemplate,
   createTerminalType,
 } from './editor/device';
 import { TemplateEditor, TypeEditor } from './editor/LibraryEditors';
-import {
-  loadPublicLibrary,
-  savePublicLibrary,
-  type PublicLibrary,
-} from './editor/localLibrary';
 import {
   hasFilePicker,
   isPickerCancel,
@@ -30,10 +24,9 @@ import {
   type TerminalType,
 } from './model/project';
 
-type Scope = 'project' | 'public';
 type Editor =
-  | { kind: 'type'; scope: Scope; value: TerminalType }
-  | { kind: 'template'; scope: Scope; value: DeviceTemplate };
+  | { kind: 'type'; value: TerminalType }
+  | { kind: 'template'; value: DeviceTemplate };
 type Status = { kind: 'info' | 'error'; text: string } | null;
 
 export default function App() {
@@ -41,18 +34,8 @@ export default function App() {
   const [projectName, setProjectName] = useState('未命名工程');
   const [dirty, setDirty] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [scope, setScope] = useState<Scope>('project');
   const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<Status>(null);
-  const [publicLibrary, setPublicLibrary] = useState<PublicLibrary | null>(
-    () => {
-      try {
-        return loadPublicLibrary();
-      } catch {
-        return null;
-      }
-    },
-  );
   const fileHandle = useRef<ProjectFileHandle | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const revision = useRef(0);
@@ -90,22 +73,6 @@ export default function App() {
     setStatus(null);
   }
 
-  function changePublicLibrary(
-    update: (current: PublicLibrary) => PublicLibrary,
-  ): boolean {
-    if (!publicLibrary) return false;
-    try {
-      const next = update(publicLibrary);
-      savePublicLibrary(next);
-      setPublicLibrary(next);
-      setStatus({ kind: 'info', text: '已保存到本机公共库' });
-      return true;
-    } catch (error) {
-      setStatus({ kind: 'error', text: errorMessage(error) });
-      return false;
-    }
-  }
-
   function canReplaceProject() {
     return (
       !dirty || window.confirm('当前工程有未保存的修改，确定放弃并继续吗？')
@@ -119,7 +86,6 @@ export default function App() {
     fileHandle.current = null;
     setDirty(true);
     setSelectedId(null);
-    setScope('project');
     setStatus({ kind: 'info', text: '空工程已创建，请显式保存到文件' });
   }
 
@@ -140,7 +106,6 @@ export default function App() {
     fileHandle.current = handle;
     setDirty(false);
     setSelectedId(null);
-    setScope('project');
     setStatus({ kind: 'info', text: `已打开工程“${next.name}”` });
   }
 
@@ -203,18 +168,10 @@ export default function App() {
       });
       return;
     }
-    if (editor.scope === 'project')
-      changeProject((current) => ({
-        ...current,
-        terminalTypes: upsert(current.terminalTypes, value),
-      }));
-    else if (
-      !changePublicLibrary((current) => ({
-        ...current,
-        terminalTypes: upsert(current.terminalTypes, value),
-      }))
-    )
-      return;
+    changeProject((current) => ({
+      ...current,
+      terminalTypes: upsert(current.terminalTypes, value),
+    }));
     setEditor(null);
   }
 
@@ -224,37 +181,24 @@ export default function App() {
       setStatus({ kind: 'error', text: '设备模板信息无效，请检查尺寸和端子' });
       return;
     }
-    if (editor.scope === 'project')
-      changeProject((current) => ({
-        ...current,
-        deviceLibrary: upsert(current.deviceLibrary, value),
-      }));
-    else if (
-      !changePublicLibrary((current) => ({
-        ...current,
-        deviceTemplates: upsert(current.deviceTemplates, value),
-      }))
-    )
-      return;
+    changeProject((current) => ({
+      ...current,
+      deviceLibrary: upsert(current.deviceLibrary, value),
+    }));
     setEditor(null);
   }
 
   function deleteType(type: TerminalType) {
     if (!project) return;
-    const templates =
-      scope === 'project'
-        ? project.deviceLibrary
-        : (publicLibrary?.deviceTemplates ?? []);
     const referenced =
-      templates.some((template) =>
+      project.deviceLibrary.some((template) =>
         template.terminals.some((terminal) => terminal.typeId === type.id),
       ) ||
-      (scope === 'project' &&
-        project.devices.some((device) =>
-          device.templateSnapshot.terminals.some(
-            (terminal) => terminal.typeId === type.id,
-          ),
-        ));
+      project.devices.some((device) =>
+        device.templateSnapshot.terminals.some(
+          (terminal) => terminal.typeId === type.id,
+        ),
+      );
     if (referenced) {
       setStatus({
         kind: 'error',
@@ -263,29 +207,19 @@ export default function App() {
       return;
     }
     if (!window.confirm(`删除端子类型“${type.name}”？`)) return;
-    if (scope === 'project')
-      changeProject((current) => ({
-        ...current,
-        terminalTypes: current.terminalTypes.filter(
-          (item) => item.id !== type.id,
-        ),
-      }));
-    else
-      changePublicLibrary((current) => ({
-        ...current,
-        terminalTypes: current.terminalTypes.filter(
-          (item) => item.id !== type.id,
-        ),
-      }));
+    changeProject((current) => ({
+      ...current,
+      terminalTypes: current.terminalTypes.filter(
+        (item) => item.id !== type.id,
+      ),
+    }));
   }
 
   function deleteTemplate(template: DeviceTemplate) {
     if (!project) return;
-    const references =
-      scope === 'project'
-        ? project.devices.filter((device) => device.templateId === template.id)
-            .length
-        : 0;
+    const references = project.devices.filter(
+      (device) => device.templateId === template.id,
+    ).length;
     if (references > 0) {
       setStatus({
         kind: 'error',
@@ -294,43 +228,12 @@ export default function App() {
       return;
     }
     if (!window.confirm(`删除设备模板“${template.name}”？`)) return;
-    if (scope === 'project')
-      changeProject((current) => ({
-        ...current,
-        deviceLibrary: current.deviceLibrary.filter(
-          (item) => item.id !== template.id,
-        ),
-      }));
-    else
-      changePublicLibrary((current) => ({
-        ...current,
-        deviceTemplates: current.deviceTemplates.filter(
-          (item) => item.id !== template.id,
-        ),
-      }));
-  }
-
-  function copyPublicTemplate(template: DeviceTemplate) {
-    if (!project || !publicLibrary) return;
-    const typeIds = new Set(publicLibrary.terminalTypes.map((type) => type.id));
-    const missing = template.terminals.find(
-      (terminal) => !typeIds.has(terminal.typeId),
-    );
-    if (missing) {
-      setStatus({
-        kind: 'error',
-        text: `公共模板缺少端子类型 ${missing.typeId}，无法复制`,
-      });
-      return;
-    }
-    changeProject((current) =>
-      copyTemplateToProject(current, template, publicLibrary.terminalTypes),
-    );
-    setScope('project');
-    setStatus({
-      kind: 'info',
-      text: `已将“${template.name}”及所需端子类型复制到项目库`,
-    });
+    changeProject((current) => ({
+      ...current,
+      deviceLibrary: current.deviceLibrary.filter(
+        (item) => item.id !== template.id,
+      ),
+    }));
   }
 
   function placeDevice(
@@ -395,14 +298,8 @@ export default function App() {
     setSelectedId(null);
   }
 
-  const currentTypes =
-    scope === 'project'
-      ? (project?.terminalTypes ?? [])
-      : (publicLibrary?.terminalTypes ?? []);
-  const currentTemplates =
-    scope === 'project'
-      ? (project?.deviceLibrary ?? [])
-      : (publicLibrary?.deviceTemplates ?? []);
+  const currentTypes = project?.terminalTypes ?? [];
+  const currentTemplates = project?.deviceLibrary ?? [];
   const selectedDevice = project?.devices.find(
     (device) => device.id === selectedId,
   );
@@ -498,156 +395,115 @@ export default function App() {
             <h2>资料库</h2>
             <p>端子与设备模板</p>
           </div>
-          <div className="scope-switch" role="group" aria-label="资料库范围">
-            <button
-              type="button"
-              className={scope === 'project' ? 'active' : ''}
-              onClick={() => setScope('project')}
-            >
-              项目库
-            </button>
-            <button
-              type="button"
-              className={scope === 'public' ? 'active' : ''}
-              onClick={() => setScope('public')}
-            >
-              公共库
-            </button>
-          </div>
-          {scope === 'public' && !publicLibrary ? (
-            <p role="alert" className="status status-error">
-              本机公共库数据无效，已暂停编辑以免覆盖原有数据。
-            </p>
-          ) : (
-            <>
-              <section className="library-section">
-                <div className="section-heading">
-                  <h3>端子类型</h3>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditor({
-                        kind: 'type',
-                        scope,
-                        value: createTerminalType(),
-                      })
-                    }
-                  >
-                    新增
-                  </button>
+          <section className="library-section">
+            <div className="section-heading">
+              <h3>端子类型</h3>
+              <button
+                type="button"
+                onClick={() =>
+                  setEditor({
+                    kind: 'type',
+                    value: createTerminalType(),
+                  })
+                }
+              >
+                新增
+              </button>
+            </div>
+            {currentTypes.length === 0 && (
+              <p className="empty-hint">尚无端子类型</p>
+            )}
+            {currentTypes.map((type) => (
+              <div key={type.id} className="library-item">
+                <span
+                  className="color-dot"
+                  style={{ backgroundColor: type.color }}
+                />
+                <span className="library-item-name" title={type.name}>
+                  {type.name}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`编辑端子类型 ${type.name}`}
+                  onClick={() => setEditor({ kind: 'type', value: type })}
+                >
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  className="danger-text"
+                  aria-label={`删除端子类型 ${type.name}`}
+                  onClick={() => deleteType(type)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </section>
+          <section className="library-section">
+            <div className="section-heading">
+              <h3>设备模板</h3>
+              <button
+                type="button"
+                onClick={() =>
+                  setEditor({
+                    kind: 'template',
+                    value: createDeviceTemplate(),
+                  })
+                }
+              >
+                新增
+              </button>
+            </div>
+            {currentTemplates.length === 0 && (
+              <p className="empty-hint">尚无设备模板</p>
+            )}
+            {currentTemplates.map((template) => (
+              <div
+                key={template.id}
+                className="template-item"
+                draggable
+                onDragStart={(event) =>
+                  event.dataTransfer.setData(TEMPLATE_DRAG_TYPE, template.id)
+                }
+              >
+                <div>
+                  <strong>{template.name}</strong>
+                  <small>
+                    {template.category || '未分类'} ·{' '}
+                    {template.terminals.length} 个端子
+                  </small>
                 </div>
-                {currentTypes.length === 0 && (
-                  <p className="empty-hint">尚无端子类型</p>
-                )}
-                {currentTypes.map((type) => (
-                  <div key={type.id} className="library-item">
-                    <span
-                      className="color-dot"
-                      style={{ backgroundColor: type.color }}
-                    />
-                    <span className="library-item-name" title={type.name}>
-                      {type.name}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`编辑端子类型 ${type.name}`}
-                      onClick={() =>
-                        setEditor({ kind: 'type', scope, value: type })
-                      }
-                    >
-                      编辑
-                    </button>
-                    <button
-                      type="button"
-                      className="danger-text"
-                      aria-label={`删除端子类型 ${type.name}`}
-                      onClick={() => deleteType(type)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </section>
-              <section className="library-section">
-                <div className="section-heading">
-                  <h3>设备模板</h3>
+                <div className="template-actions">
                   <button
                     type="button"
                     onClick={() =>
                       setEditor({
                         kind: 'template',
-                        scope,
-                        value: createDeviceTemplate(),
+                        value: template,
                       })
                     }
                   >
-                    新增
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => placeDevice(template.id)}
+                  >
+                    放入画布
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-text"
+                    aria-label={`删除模板 ${template.name}`}
+                    onClick={() => deleteTemplate(template)}
+                  >
+                    删除
                   </button>
                 </div>
-                {currentTemplates.length === 0 && (
-                  <p className="empty-hint">尚无设备模板</p>
-                )}
-                {currentTemplates.map((template) => (
-                  <div
-                    key={template.id}
-                    className="template-item"
-                    draggable={scope === 'project'}
-                    onDragStart={(event) =>
-                      event.dataTransfer.setData(
-                        TEMPLATE_DRAG_TYPE,
-                        template.id,
-                      )
-                    }
-                  >
-                    <div>
-                      <strong>{template.name}</strong>
-                      <small>
-                        {template.category || '未分类'} ·{' '}
-                        {template.terminals.length} 个端子
-                      </small>
-                    </div>
-                    <div className="template-actions">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setEditor({
-                            kind: 'template',
-                            scope,
-                            value: template,
-                          })
-                        }
-                      >
-                        编辑
-                      </button>
-                      {scope === 'project' ? (
-                        <button
-                          type="button"
-                          onClick={() => placeDevice(template.id)}
-                        >
-                          放入画布
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => copyPublicTemplate(template)}
-                        >
-                          复制到项目
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="danger-text"
-                        aria-label={`删除模板 ${template.name}`}
-                        onClick={() => deleteTemplate(template)}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </section>
-            </>
-          )}
+              </div>
+            ))}
+          </section>
         </aside>
 
         <section className="canvas-panel" aria-label="接线画布">
@@ -814,11 +670,7 @@ export default function App() {
         <TypeEditor
           key={editor.value.id}
           initial={editor.value}
-          availableTypes={
-            editor.scope === 'project'
-              ? project.terminalTypes
-              : (publicLibrary?.terminalTypes ?? [])
-          }
+          availableTypes={project.terminalTypes}
           onSave={saveType}
           onClose={() => setEditor(null)}
         />
@@ -827,11 +679,7 @@ export default function App() {
         <TemplateEditor
           key={editor.value.id}
           initial={editor.value}
-          terminalTypes={
-            editor.scope === 'project'
-              ? project.terminalTypes
-              : (publicLibrary?.terminalTypes ?? [])
-          }
+          terminalTypes={project.terminalTypes}
           onSave={saveTemplate}
           onClose={() => setEditor(null)}
         />

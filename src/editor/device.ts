@@ -118,28 +118,3 @@ export function addDevice(
   };
   return { ...project, devices: [...project.devices, instance] };
 }
-
-export function copyTemplateToProject(
-  project: Project,
-  template: DeviceTemplate,
-  types: TerminalType[],
-): Project {
-  const requiredTypeIds = new Set(
-    template.terminals.map((terminal) => terminal.typeId),
-  );
-  const existingTypeIds = new Set(project.terminalTypes.map((type) => type.id));
-  const missingTypes = types.filter(
-    (type) => requiredTypeIds.has(type.id) && !existingTypeIds.has(type.id),
-  );
-  const id = project.deviceLibrary.some((item) => item.id === template.id)
-    ? crypto.randomUUID()
-    : template.id;
-  return {
-    ...project,
-    terminalTypes: [...project.terminalTypes, ...structuredClone(missingTypes)],
-    deviceLibrary: [
-      ...project.deviceLibrary,
-      { ...structuredClone(template), id },
-    ],
-  };
-}

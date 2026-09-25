@@ -3,21 +3,8 @@ import {
   createEmptyProject,
   type DeviceInstance,
   type DeviceTemplate,
-  type TerminalType,
 } from '../model/project';
-import {
-  addDevice,
-  copyTemplateToProject,
-  getDeviceSize,
-  reorderTerminals,
-} from './device';
-
-const type: TerminalType = {
-  id: 'signal',
-  name: '信号',
-  color: '#123456',
-  compatibleTypeIds: ['signal'],
-};
+import { addDevice, getDeviceSize, reorderTerminals } from './device';
 const template: DeviceTemplate = {
   id: 'controller',
   name: '控制器',
@@ -76,10 +63,4 @@ test('device size grows with terminals and instance keeps a template snapshot', 
   expect(device.note).toBe('默认说明');
   source.name = '后来修改的模板';
   expect(device.templateSnapshot.name).toBe('控制器');
-});
-
-test('copying a public template brings missing terminal types into the project', () => {
-  const result = copyTemplateToProject(createEmptyProject(), template, [type]);
-  expect(result.deviceLibrary).toHaveLength(1);
-  expect(result.terminalTypes).toEqual([type]);
 });

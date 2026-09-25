@@ -255,26 +255,6 @@ p {
   font-size: 12px;
   margin-bottom: 0;
 }
-.scope-switch {
-  display: flex;
-  margin: 0 18px 18px;
-  background: #edf3f9;
-  border-radius: 8px;
-  padding: 3px;
-}
-.scope-switch button {
-  flex: 1;
-  border: 0;
-  background: transparent;
-  padding: 7px;
-  font-size: 12px;
-}
-.scope-switch button.active {
-  background: #fff;
-  color: #145fa9;
-  box-shadow: 0 1px 4px #16365519;
-  font-weight: 700;
-}
 .library-section {
   border-top: 1px solid #e6edf4;
   padding: 16px 14px;
