@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { flushSync } from 'react-dom';
 import DeviceCanvas, { TEMPLATE_DRAG_TYPE } from './editor/DeviceCanvas';
-import { exportDiagram, renderDiagramSvg } from './editor/diagramExport';
+import { exportDiagram, renderPrintPages } from './editor/diagramExport';
 import InspectionPanel from './editor/InspectionPanel';
 import type { ValidationIssue } from './editor/inspection';
 import { addWire } from './editor/wire';
@@ -304,9 +304,14 @@ export default function App() {
     const snapshot = projectRef.current;
     if (!snapshot) return;
     try {
-      flushSync(() => setPrintSvg(renderDiagramSvg(snapshot).svg));
+      flushSync(() => setPrintSvg(renderPrintPages(snapshot)));
       window.print();
-      setStatus({ kind: 'info', text: '可在打印对话框中选择“保存为 PDF”' });
+      setStatus({
+        kind: 'info',
+        text: snapshot.harnesses.length
+          ? '已准备折叠总览与展开明细，可在打印对话框中保存为 PDF'
+          : '可在打印对话框中选择“保存为 PDF”',
+      });
     } catch (error) {
       setStatus({ kind: 'error', text: errorMessage(error) });
     }

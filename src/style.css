@@ -287,11 +287,20 @@ p {
     display: block;
     width: 100%;
   }
+  .print-page:not(:last-child) {
+    break-after: page;
+    page-break-after: always;
+  }
+  .print-page h2 {
+    margin: 0 0 4mm;
+    font-size: 16pt;
+    color: #17334f;
+  }
   .print-sheet svg {
     display: block;
     width: 100%;
     height: auto;
-    max-height: 180mm;
+    max-height: 170mm;
   }
 }
 .workspace {

@@ -1,6 +1,10 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { createEmptyProject } from '../model/project';
-import { renderDiagramSvg, renderViewerHtml } from './diagramExport';
+import {
+  renderDiagramSvg,
+  renderPrintPages,
+  renderViewerHtml,
+} from './diagramExport';
 import { collapsedHarnessGeometry } from './harnessGeometry';
 
 function example() {
@@ -145,10 +149,74 @@ test('offline viewer includes controls, selection and print layout', () => {
   expect(html).toContain('打印 / 保存 PDF');
   expect(html).toContain('data-focus-kind="harness"');
   expect(html).toContain('@media print');
+  expect(html.match(/class="print-page"/g)).toHaveLength(2);
   expect(html).not.toContain('<script src=');
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   if (!script) throw new Error('HTML 查看页缺少脚本');
   expect(() => new Function(script)).not.toThrow();
+});
+
+test('print layout includes collapsed overview and expanded conductor detail', () => {
+  const container = document.createElement('div');
+  container.innerHTML = renderPrintPages(example());
+  const pages = container.querySelectorAll('.print-page');
+  expect(pages).toHaveLength(2);
+  expect(pages[0].textContent).toContain('线束总览（折叠）');
+  expect(pages[0].querySelectorAll('[data-kind="harness"]')).toHaveLength(1);
+  expect(pages[0].querySelectorAll('[data-kind="wire"]')).toHaveLength(0);
+  expect(pages[1].textContent).toContain('芯线明细（展开）');
+  expect(pages[1].querySelectorAll('[data-kind="wire"]')).toHaveLength(4);
+});
+
+test('offline viewer selects canvas objects and switches harness views', () => {
+  const html = renderViewerHtml(example());
+  document.body.innerHTML = html.match(/<body>([\s\S]*?)<\/body>/)![1];
+  const svg = document.querySelector('svg')!;
+  Object.defineProperty(svg, 'clientWidth', { value: 800 });
+  Object.defineProperty(svg, 'clientHeight', { value: 600 });
+  Object.defineProperty(SVGElement.prototype, 'getBBox', {
+    value: () => ({ x: 0, y: 0, width: 100, height: 100 }),
+    configurable: true,
+  });
+  const capture = vi.fn();
+  svg.setPointerCapture = capture;
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)![1];
+  new Function(script)();
+  const initialView = svg.getAttribute('viewBox');
+  const harness = svg.querySelector<SVGGElement>('[data-kind="harness"]')!;
+  const wire = svg.querySelector<SVGGElement>('[data-kind="wire"]')!;
+  const device = svg.querySelector<SVGGElement>('[data-kind="device"]')!;
+  const toggle = document.querySelector<HTMLButtonElement>('.harness-toggle')!;
+  expect(wire.style.display).toBe('none');
+  harness
+    .querySelector('.edge-hit')!
+    .dispatchEvent(new Event('pointerdown', { bubbles: true }));
+  expect(capture).not.toHaveBeenCalled();
+  harness
+    .querySelector('.edge-hit')!
+    .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(harness.classList.contains('active')).toBe(true);
+  expect(svg.getAttribute('viewBox')).toBe(initialView);
+  device
+    .querySelector('rect')!
+    .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(device.classList.contains('active')).toBe(true);
+  document
+    .querySelector<HTMLButtonElement>('[data-focus-kind="device"]')!
+    .click();
+  expect(svg.getAttribute('viewBox')).not.toBe(initialView);
+  toggle.click();
+  expect(harness.style.display).toBe('none');
+  expect(wire.style.display).toBe('');
+  wire
+    .querySelector('.edge-hit')!
+    .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(wire.classList.contains('active')).toBe(true);
+  wire
+    .querySelector('.edge-hit')!
+    .dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  expect(toggle.dataset.collapsed).toBe('true');
+  document.body.innerHTML = '';
 });
 
 test('collapsed harness keeps every terminal connected, including mixed sides', () => {

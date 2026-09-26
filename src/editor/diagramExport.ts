@@ -57,6 +57,7 @@ function edgeSvg(
   width: number,
   routePoints?: Point[],
   offset = 0,
+  attributes = '',
 ): string {
   const source = terminalPoint(project, wire.source);
   const target = terminalPoint(project, wire.target);
@@ -78,7 +79,7 @@ function edgeSvg(
     project.viewPreferences?.showLabels === false || !label
       ? ''
       : `<g class="edge-label"><rect x="${n(geometry.label.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(geometry.label.y - 24)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(geometry.label.x)}" y="${n(geometry.label.y - 10)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
-  return `<g class="diagram-object" data-kind="${kind}" data-id="${escapeXml(id)}"><title>${text(label || id)}</title><path d="${geometry.path}" fill="none" stroke="${escapeXml(color)}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.path}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit"/>${labelMarkup}</g>`;
+  return `<g class="diagram-object" data-kind="${kind}" data-id="${escapeXml(id)}"${attributes}><title>${text(label || id)}</title><path d="${geometry.path}" fill="none" stroke="${escapeXml(color)}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.path}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit"/>${labelMarkup}</g>`;
 }
 
 function imageData(project: Project, device: DeviceInstance): string | null {
@@ -146,7 +147,10 @@ function deviceSvg(
   return `<g class="diagram-object" data-kind="device" data-id="${escapeXml(device.id)}"><title>${text(device.name)}</title><rect x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" rx="10" fill="#fff" stroke="#5c86aa" stroke-width="2"/>${imageMarkup}${labelMarkup}${terminals}</g>`;
 }
 
-export function renderDiagramSvg(project: Project): Diagram {
+export function renderDiagramSvg(
+  project: Project,
+  includeHiddenHarnessViews = false,
+): Diagram {
   const xValues = project.devices.flatMap((device) => [
     device.position.x,
     device.position.x + getDeviceSize(device).width,
@@ -171,6 +175,7 @@ export function renderDiagramSvg(project: Project): Diagram {
   const wires = project.wires
     .filter(
       (wire) =>
+        includeHiddenHarnessViews ||
         !wire.harnessId ||
         !project.harnesses.find((harness) => harness.id === wire.harnessId)
           ?.collapsed,
@@ -195,11 +200,14 @@ export function renderDiagramSvg(project: Project): Diagram {
         wire.harnessId ? 2.5 : 2,
         wire.routePoints,
         offset,
+        includeHiddenHarnessViews && wire.harnessId
+          ? ` data-harness-id="${escapeXml(wire.harnessId)}" data-view="expanded"${project.harnesses.find((harness) => harness.id === wire.harnessId)?.collapsed ? ' style="display:none"' : ''}`
+          : '',
       );
     })
     .join('');
   const harnesses = project.harnesses
-    .filter((harness) => harness.collapsed)
+    .filter((harness) => includeHiddenHarnessViews || harness.collapsed)
     .map((harness) => {
       const children = project.wires.filter(
         (wire) => wire.harnessId === harness.id,
@@ -212,7 +220,10 @@ export function renderDiagramSvg(project: Project): Diagram {
           ? ''
           : `<g class="edge-label"><rect x="${n(geometry.label.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(geometry.label.y - 24)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(geometry.label.x)}" y="${n(geometry.label.y - 10)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
       const color = escapeXml(harness.templateSnapshot.color);
-      return `<g class="diagram-object" data-kind="harness" data-id="${escapeXml(harness.id)}"><title>${text(label)}</title><path d="${geometry.branches}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.trunk}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.branches} ${geometry.trunk}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit"/>${labelMarkup}</g>`;
+      const visibility = includeHiddenHarnessViews
+        ? ` data-harness-id="${escapeXml(harness.id)}" data-view="collapsed"${harness.collapsed ? '' : ' style="display:none"'}`
+        : '';
+      return `<g class="diagram-object" data-kind="harness" data-id="${escapeXml(harness.id)}"${visibility}><title>${text(label)}</title><path d="${geometry.branches}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.trunk}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.branches} ${geometry.trunk}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit"/>${labelMarkup}</g>`;
     })
     .join('');
   const devices = project.devices
@@ -222,52 +233,56 @@ export function renderDiagramSvg(project: Project): Diagram {
   return { svg, width, height };
 }
 
+export function renderPrintPages(project: Project): string {
+  const views = project.harnesses.length
+    ? [
+        { title: '线束总览（折叠）', collapsed: true },
+        { title: '芯线明细（展开）', collapsed: false },
+      ]
+    : [{ title: '', collapsed: false }];
+  return views
+    .map(({ title, collapsed }) => {
+      const snapshot = {
+        ...project,
+        harnesses: project.harnesses.map((harness) => ({
+          ...harness,
+          collapsed,
+        })),
+      };
+      return `<section class="print-page">${title ? `<h2>${title}</h2>` : ''}${renderDiagramSvg(snapshot).svg}</section>`;
+    })
+    .join('');
+}
+
 export function renderViewerHtml(project: Project): string {
-  const { svg } = renderDiagramSvg(project);
-  const item = (
-    kind: string,
-    id: string,
-    label: string,
-    focusKind = kind,
-    focusId = id,
-  ) =>
-    `<button type="button" class="object-link" data-focus-kind="${focusKind}" data-focus-id="${escapeXml(focusId)}">${escapeXml(label)}</button>`;
+  const { svg } = renderDiagramSvg(project, true);
+  const item = (kind: string, id: string, label: string) =>
+    `<button type="button" class="object-link" data-focus-kind="${kind}" data-focus-id="${escapeXml(id)}">${escapeXml(label)}</button>`;
   const devices = project.devices
     .map((device) => item('device', device.id, device.name))
     .join('');
   const wires = project.wires
     .map((wire) => {
-      const harness = wire.harnessId
-        ? project.harnesses.find((entry) => entry.id === wire.harnessId)
-        : undefined;
       return item(
         'wire',
         wire.id,
         [wire.number, wire.name].filter(Boolean).join(' · ') || wire.id,
-        harness?.collapsed ? 'harness' : 'wire',
-        harness?.collapsed ? harness.id : wire.id,
       );
     })
     .join('');
   const harnesses = project.harnesses
-    .map((harness) =>
-      item(
-        'harness',
-        harness.id,
-        `${harness.number || harness.name} · ${project.wires.filter((wire) => wire.harnessId === harness.id).length} 芯`,
-        harness.collapsed ? 'harness' : 'wire',
-        harness.collapsed
-          ? harness.id
-          : (project.wires.find((wire) => wire.harnessId === harness.id)?.id ??
-              harness.id),
-      ),
+    .map(
+      (harness) =>
+        `<div class="harness-item">${item('harness', harness.id, `${harness.number || harness.name} · ${project.wires.filter((wire) => wire.harnessId === harness.id).length} 芯`)}<button type="button" class="harness-toggle" data-harness-id="${escapeXml(harness.id)}" data-collapsed="${harness.collapsed}" aria-expanded="${!harness.collapsed}">${harness.collapsed ? '展开芯线' : '折叠线束'}</button></div>`,
     )
     .join('');
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeXml(project.name)} · WireLink 图纸</title><style>
-*{box-sizing:border-box}body{margin:0;font:14px system-ui,"Microsoft YaHei",sans-serif;color:#17334f;background:#eaf0f6}.viewer{display:grid;grid-template-columns:230px minmax(0,1fr);height:100vh}.sidebar{overflow:auto;padding:18px;background:#fff;border-right:1px solid #cbdbe9}.sidebar h1{font-size:17px;margin:0 0 18px}.sidebar h2{font-size:12px;color:#71869a;margin:18px 0 8px}.object-link{display:block;width:100%;padding:6px 8px;margin:2px 0;text-align:left;border:0;border-radius:5px;background:transparent;color:#29445f;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.object-link:hover,.object-link.active{background:#e6f1fc}.stage{display:flex;flex-direction:column;min-width:0}.toolbar{display:flex;gap:8px;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid #cbdbe9}.toolbar button{padding:6px 11px;border:1px solid #cbdbe9;border-radius:6px;background:#fff;color:#17334f;cursor:pointer}.hint{margin-left:auto;color:#71869a;font-size:12px}.viewport{flex:1;overflow:hidden;min-height:0}.viewport svg{width:100%;height:100%;touch-action:none;cursor:grab}.viewport svg.dragging{cursor:grabbing}.diagram-object{cursor:pointer}.diagram-object.active>rect:nth-child(2),.diagram-object.active>path:first-of-type{stroke:#e8590c!important;stroke-width:5!important}.edge-hit{cursor:pointer}@media(max-width:700px){.viewer{grid-template-columns:1fr}.sidebar{max-height:180px;border-right:0;border-bottom:1px solid #cbdbe9}.hint{display:none}}@page{size:A4 landscape;margin:10mm}@media print{body{background:#fff;print-color-adjust:exact;-webkit-print-color-adjust:exact}.viewer{display:block;height:auto}.sidebar,.toolbar{display:none}.viewport{height:180mm;overflow:visible}.viewport svg{display:block;width:100%;height:100%;cursor:default}}
-</style></head><body><div class="viewer"><aside class="sidebar"><h1>${escapeXml(project.name)}</h1><h2>设备</h2>${devices || '<p>无设备</p>'}<h2>导线</h2>${wires || '<p>无导线</p>'}<h2>线束</h2>${harnesses || '<p>无线束</p>'}</aside><main class="stage"><div class="toolbar"><button type="button" id="fit">适配全图</button><button type="button" id="zoom-in">放大</button><button type="button" id="zoom-out">缩小</button><button type="button" id="print">打印 / 保存 PDF</button><span class="hint">拖动画布平移，滚轮缩放；点击对象选中</span></div><div class="viewport">${svg}</div></main></div><script>
-const svg=document.querySelector('.viewport svg');const original=svg.getAttribute('viewBox').split(' ').map(Number);let view=[...original];function setView(x,y,w,h){view=[x,y,w,h];svg.setAttribute('viewBox',view.join(' '))}function zoom(scale){const [x,y,w,h]=view;const nw=w*scale,nh=h*scale;setView(x+(w-nw)/2,y+(h-nh)/2,nw,nh)}function focus(kind,id){const node=[...svg.querySelectorAll('.diagram-object')].find(item=>item.dataset.kind===kind&&item.dataset.id===id);if(!node)return;document.querySelectorAll('.active').forEach(item=>item.classList.remove('active'));node.classList.add('active');document.querySelectorAll('.object-link').forEach(item=>{if(item.dataset.focusKind===kind&&item.dataset.focusId===id)item.classList.add('active')});const box=node.getBBox();const pad=Math.max(65,Math.max(box.width,box.height)*.4);const aspect=svg.clientWidth/Math.max(1,svg.clientHeight);let w=Math.max(box.width+pad*2,160),h=Math.max(box.height+pad*2,120);if(w/h>aspect)h=w/aspect;else w=h*aspect;setView(box.x+box.width/2-w/2,box.y+box.height/2-h/2,w,h)}
-document.getElementById('fit').onclick=()=>setView(...original);document.getElementById('zoom-in').onclick=()=>zoom(.8);document.getElementById('zoom-out').onclick=()=>zoom(1.25);document.getElementById('print').onclick=()=>{setView(...original);window.print()};document.querySelectorAll('.object-link').forEach(item=>item.onclick=()=>focus(item.dataset.focusKind,item.dataset.focusId));svg.addEventListener('click',event=>{const node=event.target.closest('.diagram-object');if(node)focus(node.dataset.kind,node.dataset.id)});svg.addEventListener('wheel',event=>{event.preventDefault();zoom(event.deltaY<0?.9:1.1)},{passive:false});let drag=null;svg.addEventListener('pointerdown',event=>{drag={x:event.clientX,y:event.clientY,view:[...view]};svg.setPointerCapture(event.pointerId);svg.classList.add('dragging')});svg.addEventListener('pointermove',event=>{if(!drag)return;const dx=(event.clientX-drag.x)*drag.view[2]/Math.max(1,svg.clientWidth);const dy=(event.clientY-drag.y)*drag.view[3]/Math.max(1,svg.clientHeight);setView(drag.view[0]-dx,drag.view[1]-dy,drag.view[2],drag.view[3])});svg.addEventListener('pointerup',()=>{drag=null;svg.classList.remove('dragging')});
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,"Microsoft YaHei",sans-serif;color:#17334f;background:#eaf0f6}.viewer{display:grid;grid-template-columns:230px minmax(0,1fr);height:100vh}.sidebar{overflow:auto;padding:18px;background:#fff;border-right:1px solid #cbdbe9}.sidebar h1{font-size:17px;margin:0 0 18px}.sidebar h2{font-size:12px;color:#71869a;margin:18px 0 8px}.object-link{display:block;width:100%;padding:6px 8px;margin:2px 0;text-align:left;border:0;border-radius:5px;background:transparent;color:#29445f;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.object-link:hover,.object-link.active{background:#e6f1fc}.harness-item{display:flex;align-items:center;gap:4px}.harness-item .object-link{min-width:0}.harness-toggle{flex:none;border:1px solid #cbdbe9;border-radius:5px;background:#fff;color:#29445f;padding:5px;cursor:pointer;font-size:11px}.stage{display:flex;flex-direction:column;min-width:0}.toolbar{display:flex;gap:8px;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid #cbdbe9}.toolbar button{padding:6px 11px;border:1px solid #cbdbe9;border-radius:6px;background:#fff;color:#17334f;cursor:pointer}.hint{margin-left:auto;color:#71869a;font-size:12px}.viewport{flex:1;overflow:hidden;min-height:0}.viewport svg{width:100%;height:100%;touch-action:none;cursor:grab}.viewport svg.dragging{cursor:grabbing}.diagram-object{cursor:pointer}.diagram-object.active>rect:nth-child(2),.diagram-object.active>path:not(.edge-hit){stroke:#e8590c!important}.edge-hit{cursor:pointer}.print-pages{display:none}@media(max-width:700px){.viewer{grid-template-columns:1fr}.sidebar{max-height:180px;border-right:0;border-bottom:1px solid #cbdbe9}.hint{display:none}}@page{size:A4 landscape;margin:10mm}@media print{body{background:#fff;print-color-adjust:exact;-webkit-print-color-adjust:exact}.viewer{display:none}.print-pages{display:block}.print-page:not(:last-child){break-after:page;page-break-after:always}.print-page h2{margin:0 0 4mm;font-size:16pt}.print-page svg{display:block;width:100%;height:auto;max-height:170mm}}
+</style></head><body><div class="viewer"><aside class="sidebar"><h1>${escapeXml(project.name)}</h1><h2>设备</h2>${devices || '<p>无设备</p>'}<h2>导线</h2>${wires || '<p>无导线</p>'}<h2>线束</h2>${harnesses || '<p>无线束</p>'}</aside><main class="stage"><div class="toolbar"><button type="button" id="fit">适配全图</button><button type="button" id="zoom-in">放大</button><button type="button" id="zoom-out">缩小</button><button type="button" id="print">打印 / 保存 PDF</button><span class="hint">拖动画布平移，滚轮缩放；点击对象选中</span></div><div class="viewport">${svg}</div></main></div><div class="print-pages">${renderPrintPages(project)}</div><script>
+const svg=document.querySelector('.viewport svg');const original=svg.getAttribute('viewBox').split(' ').map(Number);let view=[...original];function setView(x,y,w,h){view=[x,y,w,h];svg.setAttribute('viewBox',view.join(' '))}function zoom(scale){const [x,y,w,h]=view;const nw=w*scale,nh=h*scale;setView(x+(w-nw)/2,y+(h-nh)/2,nw,nh)}function focus(kind,id,center=true){const node=[...svg.querySelectorAll('.diagram-object')].find(item=>item.dataset.kind===kind&&item.dataset.id===id);if(!node)return;if(node.style.display==='none'&&node.dataset.harnessId)toggleHarness(node.dataset.harnessId,kind==='harness');document.querySelectorAll('.active').forEach(item=>item.classList.remove('active'));node.classList.add('active');document.querySelectorAll('.object-link').forEach(item=>{if(item.dataset.focusKind===kind&&item.dataset.focusId===id)item.classList.add('active')});if(!center)return;const box=node.getBBox();const pad=Math.max(65,Math.max(box.width,box.height)*.4);const aspect=svg.clientWidth/Math.max(1,svg.clientHeight);let w=Math.max(box.width+pad*2,160),h=Math.max(box.height+pad*2,120);if(w/h>aspect)h=w/aspect;else w=h*aspect;setView(box.x+box.width/2-w/2,box.y+box.height/2-h/2,w,h)}
+function toggleHarness(id,collapsed){const button=[...document.querySelectorAll('.harness-toggle')].find(item=>item.dataset.harnessId===id);if(!button)return;button.dataset.collapsed=String(collapsed);button.setAttribute('aria-expanded',String(!collapsed));button.textContent=collapsed?'展开芯线':'折叠线束';svg.querySelectorAll('.diagram-object[data-harness-id]').forEach(node=>{if(node.dataset.harnessId===id)node.style.display=node.dataset.view===(collapsed?'collapsed':'expanded')?'':'none'});document.querySelectorAll('.active').forEach(item=>item.classList.remove('active'))}
+document.querySelectorAll('.harness-toggle').forEach(button=>button.onclick=()=>toggleHarness(button.dataset.harnessId,button.dataset.collapsed!=='true'));
+document.getElementById('fit').onclick=()=>setView(...original);document.getElementById('zoom-in').onclick=()=>zoom(.8);document.getElementById('zoom-out').onclick=()=>zoom(1.25);document.getElementById('print').onclick=()=>{setView(...original);window.print()};document.querySelectorAll('.object-link').forEach(item=>item.onclick=()=>focus(item.dataset.focusKind,item.dataset.focusId));svg.addEventListener('click',event=>{const node=event.target.closest('.diagram-object');if(node)focus(node.dataset.kind,node.dataset.id,false)});svg.addEventListener('dblclick',event=>{const node=event.target.closest('.diagram-object');const id=node?.dataset.harnessId;if(id){const button=[...document.querySelectorAll('.harness-toggle')].find(item=>item.dataset.harnessId===id);toggleHarness(id,button.dataset.collapsed!=='true')}});svg.addEventListener('wheel',event=>{event.preventDefault();zoom(event.deltaY<0?.9:1.1)},{passive:false});let drag=null;svg.addEventListener('pointerdown',event=>{if(event.target.closest('.diagram-object'))return;drag={x:event.clientX,y:event.clientY,view:[...view]};svg.setPointerCapture(event.pointerId);svg.classList.add('dragging')});svg.addEventListener('pointermove',event=>{if(!drag)return;const dx=(event.clientX-drag.x)*drag.view[2]/Math.max(1,svg.clientWidth);const dy=(event.clientY-drag.y)*drag.view[3]/Math.max(1,svg.clientHeight);setView(drag.view[0]-dx,drag.view[1]-dy,drag.view[2],drag.view[3])});svg.addEventListener('pointerup',()=>{if(!drag)return;drag=null;svg.releasePointerCapture(event.pointerId);svg.classList.remove('dragging')});
 </script></body></html>`;
 }
 
