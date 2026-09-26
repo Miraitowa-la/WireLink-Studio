@@ -56,18 +56,17 @@ function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
       className={`device-node${selected ? ' device-node-selected' : ''}`}
       style={{ width, height }}
     >
+      {device.templateSnapshot.appearance.kind === 'image' && imageAsset && (
+        <img
+          className="device-node-image"
+          src={imageAsset.data}
+          alt=""
+          style={{
+            objectFit: device.templateSnapshot.appearance.imageFit ?? 'contain',
+          }}
+        />
+      )}
       <div className="device-node-center">
-        {device.templateSnapshot.appearance.kind === 'image' && imageAsset && (
-          <img
-            className="device-node-image"
-            src={imageAsset.data}
-            alt=""
-            style={{
-              objectFit:
-                device.templateSnapshot.appearance.imageFit ?? 'contain',
-            }}
-          />
-        )}
         <strong>{device.name}</strong>
         {device.templateSnapshot.category && (
           <small>{device.templateSnapshot.category}</small>
