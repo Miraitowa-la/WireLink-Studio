@@ -25,7 +25,7 @@ import type {
   TerminalType,
   WireEndpoint,
 } from '../model/project';
-import { getDeviceSize, GRID_SIZE, SIDES } from './device';
+import { getDeviceSize, GRID_SIZE, SIDES, terminalOffset } from './device';
 import { collapsedHarnessGeometry } from './harnessGeometry';
 
 export const TEMPLATE_DRAG_TYPE = 'application/wirelink-device-template';
@@ -78,11 +78,15 @@ function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
           .filter((terminal) => terminal.side === side)
           .sort((a, b) => a.order - b.order);
         return onSide.map((terminal, index) => {
-          const fraction = `${((index + 1) / (onSide.length + 1)) * 100}%`;
+          const offset = terminalOffset(
+            side === 'top' || side === 'bottom' ? width : height,
+            onSide.length,
+            index,
+          );
           const style =
             side === 'top' || side === 'bottom'
-              ? { left: fraction }
-              : { top: fraction };
+              ? { left: offset }
+              : { top: offset };
           return (
             <div key={terminal.id}>
               <Handle
@@ -99,7 +103,13 @@ function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
               />
               <span
                 className={`terminal-label terminal-label-${side}`}
-                style={style}
+                style={{
+                  ...style,
+                  ...((side === 'top' || side === 'bottom') &&
+                  onSide.length === 1
+                    ? { maxWidth: 66 }
+                    : {}),
+                }}
                 title={terminal.label}
               >
                 {terminal.label}

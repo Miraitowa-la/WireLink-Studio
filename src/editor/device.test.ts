@@ -12,7 +12,9 @@ import {
   reorderTerminals,
   snapPointToGrid,
   snapSizeToGrid,
+  terminalOffset,
 } from './device';
+import { terminalPoint } from './harnessGeometry';
 const template: DeviceTemplate = {
   id: 'controller',
   name: '控制器',
@@ -90,4 +92,38 @@ test('device dimensions and every corner align to the 30-unit grid', () => {
     device.position.y + size.height,
   ])
     expect(Math.abs(coordinate % GRID_SIZE)).toBe(0);
+});
+
+test('terminal centers on every side align to the grid and adjacent terminals are 30 units apart', () => {
+  const fourSides = structuredClone(template);
+  fourSides.width = 240;
+  fourSides.height = 180;
+  fourSides.terminals = ['top', 'right', 'bottom', 'left'].flatMap((side) =>
+    [0, 1].map((order) => ({
+      ...template.terminals[0],
+      id: `${side}-${order}`,
+      side: side as 'top' | 'right' | 'bottom' | 'left',
+      order,
+    })),
+  );
+  const project = addDevice(createEmptyProject(), fourSides, { x: 30, y: 60 });
+  const device = project.devices[0];
+  const { width, height } = getDeviceSize(device);
+  for (const side of ['top', 'right', 'bottom', 'left'] as const) {
+    const points = [0, 1].map((order) =>
+      terminalPoint(project, {
+        deviceId: device.id,
+        terminalId: `${side}-${order}`,
+      })!,
+    );
+    const axis = side === 'top' || side === 'bottom' ? 'x' : 'y';
+    expect(points[1][axis] - points[0][axis]).toBe(GRID_SIZE);
+    for (const point of points) {
+      expect(point.x % GRID_SIZE).toBe(0);
+      expect(point.y % GRID_SIZE).toBe(0);
+    }
+    expect(terminalOffset(axis === 'x' ? width : height, 2, 0)).toBe(
+      points[0][axis] - device.position[axis],
+    );
+  }
 });

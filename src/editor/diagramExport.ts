@@ -1,5 +1,5 @@
 import type { DeviceInstance, Project, Side, Wire } from '../model/project';
-import { getDeviceSize, SIDES } from './device';
+import { getDeviceSize, SIDES, terminalOffset } from './device';
 import { serializeProjectFile } from '../model/project';
 import { safeProjectName } from './projectFiles';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
@@ -119,15 +119,19 @@ function deviceSvg(
       .filter((terminal) => terminal.side === side)
       .sort((a, b) => a.order - b.order);
     return onSide.map((terminal, order) => {
-      const fraction = (order + 1) / (onSide.length + 1);
+      const offset = terminalOffset(
+        side === 'top' || side === 'bottom' ? width : height,
+        onSide.length,
+        order,
+      );
       const point =
         side === 'top'
-          ? { x: x + width * fraction, y }
+          ? { x: x + offset, y }
           : side === 'bottom'
-            ? { x: x + width * fraction, y: y + height }
+            ? { x: x + offset, y: y + height }
             : side === 'left'
-              ? { x, y: y + height * fraction }
-              : { x: x + width, y: y + height * fraction };
+              ? { x, y: y + offset }
+              : { x: x + width, y: y + offset };
       const type = project.terminalTypes.find(
         (item) => item.id === terminal.typeId,
       );
@@ -141,7 +145,13 @@ function deviceSvg(
             : point.y + 3;
       const anchor =
         side === 'left' ? 'start' : side === 'right' ? 'end' : 'middle';
-      return `<circle cx="${n(point.x)}" cy="${n(point.y)}" r="5.5" fill="${escapeXml(type?.color ?? '#64748b')}" stroke="#fff" stroke-width="2"/><text x="${n(labelX)}" y="${n(labelY)}" text-anchor="${anchor}" font-size="10" font-weight="600" fill="#526b83">${text(terminal.label, side === 'top' || side === 'bottom' ? 11 : 9)}</text>`;
+      const labelLimit =
+        side === 'top' || side === 'bottom'
+          ? onSide.length === 1
+            ? 11
+            : 5
+          : 9;
+      return `<circle cx="${n(point.x)}" cy="${n(point.y)}" r="5.5" fill="${escapeXml(type?.color ?? '#64748b')}" stroke="#fff" stroke-width="2"/><text x="${n(labelX)}" y="${n(labelY)}" text-anchor="${anchor}" font-size="10" font-weight="600" fill="#526b83">${text(terminal.label, labelLimit)}</text>`;
     });
   }).join('');
   return `<g class="diagram-object" data-kind="device" data-id="${escapeXml(device.id)}"><title>${text(device.name)}</title><rect x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" rx="10" fill="#fff" stroke="#5c86aa" stroke-width="2"/>${imageMarkup}${labelMarkup}${terminals}</g>`;

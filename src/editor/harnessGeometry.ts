@@ -4,7 +4,7 @@ import type {
   Side,
   WireEndpoint,
 } from '../model/project';
-import { getDeviceSize } from './device';
+import { getDeviceSize, terminalOffset } from './device';
 
 type Point = { x: number; y: number };
 type Box = { x: number; y: number; width: number; height: number };
@@ -21,20 +21,22 @@ export function terminalPoint(
   const sameSide = device.templateSnapshot.terminals
     .filter((item) => item.side === terminal.side)
     .sort((a, b) => a.order - b.order);
-  const fraction =
-    (sameSide.findIndex((item) => item.id === terminal.id) + 1) /
-    (sameSide.length + 1);
   const { width, height } = getDeviceSize(device);
   const { x, y } = device.position;
+  const offset = terminalOffset(
+    terminal.side === 'top' || terminal.side === 'bottom' ? width : height,
+    sameSide.length,
+    sameSide.findIndex((item) => item.id === terminal.id),
+  );
   switch (terminal.side) {
     case 'top':
-      return { x: x + width * fraction, y };
+      return { x: x + offset, y };
     case 'bottom':
-      return { x: x + width * fraction, y: y + height };
+      return { x: x + offset, y: y + height };
     case 'left':
-      return { x, y: y + height * fraction };
+      return { x, y: y + offset };
     case 'right':
-      return { x: x + width, y: y + height * fraction };
+      return { x: x + width, y: y + offset };
   }
 }
 

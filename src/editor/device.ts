@@ -21,6 +21,14 @@ export const snapPointToGrid = (point: { x: number; y: number }) => ({
 export const snapSizeToGrid = (value: number, minimum: number) =>
   Math.max(minimum, snapToGrid(Number.isFinite(value) ? value : minimum));
 const growToGrid = (value: number) => Math.ceil(value / GRID_SIZE) * GRID_SIZE;
+export const terminalOffset = (
+  sideLength: number,
+  count: number,
+  index: number,
+) =>
+  Math.floor((sideLength - (count - 1) * GRID_SIZE) / (2 * GRID_SIZE)) *
+    GRID_SIZE +
+  index * GRID_SIZE;
 export const SIDE_LABELS: Record<Side, string> = {
   top: '上边',
   right: '右边',

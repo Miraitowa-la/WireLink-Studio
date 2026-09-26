@@ -565,6 +565,7 @@ p {
 }
 .terminal-label-top,
 .terminal-label-bottom {
+  max-width: 28px;
   transform: translateX(-50%);
 }
 .terminal-label-top {

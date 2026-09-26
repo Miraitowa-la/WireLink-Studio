@@ -239,7 +239,7 @@ test('collapsed harness label sits on a long trunk and clears short gaps', () =>
   const project = example();
   project.harnesses[0].routePoints = [];
   const wide = collapsedHarnessGeometry(project, 'harness')!;
-  expect(wide.label.y).toBe(160);
+  expect(wide.label.y).toBe(145);
   project.devices[1].position.x = 170;
   const narrow = collapsedHarnessGeometry(project, 'harness')!;
   expect(narrow.label.y).toBeLessThan(project.devices[0].position.y);
