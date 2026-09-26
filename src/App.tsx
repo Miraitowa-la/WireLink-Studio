@@ -1477,13 +1477,13 @@ function RoutePointsInput({
     }
     setError('');
     const next = parsed.length
-      ? parsed.map(([x, y]) => ({ x: Number(x), y: Number(y) }))
+      ? parsed.map(([x, y]) => snapPointToGrid({ x: Number(x), y: Number(y) }))
       : undefined;
     if (JSON.stringify(next) !== JSON.stringify(points)) onSave(next);
   }
   return (
     <label>
-      路线点（画布坐标，正交连接）
+      路线点（画布坐标，自动吸附到 30 单位网格）
       <textarea
         rows={2}
         placeholder="例如 300,100; 300,260"

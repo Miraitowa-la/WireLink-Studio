@@ -4,7 +4,13 @@ import type {
   Side,
   WireEndpoint,
 } from '../model/project';
-import { getDeviceSize, terminalOffset } from './device';
+import {
+  getDeviceSize,
+  GRID_SIZE,
+  snapPointToGrid,
+  snapToGrid,
+  terminalOffset,
+} from './device';
 
 type Point = { x: number; y: number };
 type Box = { x: number; y: number; width: number; height: number };
@@ -71,8 +77,12 @@ function branch(
   face: Side,
 ): Point[] {
   const exit = {
-    x: point.x + (side === 'left' ? -24 : side === 'right' ? 24 : 0),
-    y: point.y + (side === 'top' ? -24 : side === 'bottom' ? 24 : 0),
+    x:
+      point.x +
+      (side === 'left' ? -GRID_SIZE : side === 'right' ? GRID_SIZE : 0),
+    y:
+      point.y +
+      (side === 'top' ? -GRID_SIZE : side === 'bottom' ? GRID_SIZE : 0),
   };
   const points = [point, exit];
   if (side === face) {
@@ -83,11 +93,15 @@ function branch(
     );
   } else if (axis === 'x' && (side === 'left' || side === 'right')) {
     const outerY =
-      point.y < box.y + box.height / 2 ? box.y - 24 : box.y + box.height + 24;
+      point.y < box.y + box.height / 2
+        ? box.y - GRID_SIZE
+        : box.y + box.height + GRID_SIZE;
     points.push({ x: exit.x, y: outerY }, { x: junction.x, y: outerY });
   } else if (axis === 'y' && (side === 'top' || side === 'bottom')) {
     const outerX =
-      point.x < box.x + box.width / 2 ? box.x - 24 : box.x + box.width + 24;
+      point.x < box.x + box.width / 2
+        ? box.x - GRID_SIZE
+        : box.x + box.width + GRID_SIZE;
     points.push({ x: outerX, y: exit.y }, { x: outerX, y: junction.y });
   } else {
     points.push(
@@ -150,8 +164,8 @@ export function collapsedHarnessGeometry(project: Project, harnessId: string) {
       ? targetBox.x + (forward ? 0 : targetBox.width)
       : targetBox.y + (forward ? 0 : targetBox.height);
   const gap = Math.abs(targetEdge - sourceEdge);
-  const lead = Math.min(32, gap / 4);
-  const cross =
+  const lead = gap >= GRID_SIZE * 2 ? GRID_SIZE : 0;
+  const cross = snapToGrid(
     pairs.reduce(
       (sum, pair) =>
         sum +
@@ -159,7 +173,8 @@ export function collapsedHarnessGeometry(project: Project, harnessId: string) {
           pair.target!.point[axis === 'x' ? 'y' : 'x']) /
           2,
       0,
-    ) / pairs.length;
+    ) / pairs.length,
+  );
   const sourceJunction =
     axis === 'x'
       ? { x: sourceEdge + (forward ? lead : -lead), y: cross }
@@ -170,7 +185,8 @@ export function collapsedHarnessGeometry(project: Project, harnessId: string) {
       : { x: cross, y: targetEdge + (forward ? -lead : lead) };
   const trunkPoints = [sourceJunction];
   for (const point of harness.routePoints ?? []) {
-    trunkPoints.push({ x: point.x, y: trunkPoints.at(-1)!.y }, point);
+    const snapped = snapPointToGrid(point);
+    trunkPoints.push({ x: snapped.x, y: trunkPoints.at(-1)!.y }, snapped);
   }
   trunkPoints.push(
     axis === 'x'

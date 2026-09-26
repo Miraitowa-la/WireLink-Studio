@@ -421,7 +421,13 @@ function Canvas({
           'node.a11yDescription.default': '按回车选择设备，方向键移动设备',
         }}
       >
-        <Background gap={GRID_SIZE} color="#a9bdcf" />
+        {/* React Flow centers dots inside each cell; shift them onto grid coordinates. */}
+        <Background
+          gap={GRID_SIZE}
+          size={1}
+          offset={(1 - GRID_SIZE) / 2}
+          color="#a9bdcf"
+        />
         {project.devices.length > 1 && (
           <MiniMap
             pannable

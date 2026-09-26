@@ -128,7 +128,7 @@ test('exports four-side terminals, embedded image and current harness view', () 
   expect(collapsed.svg).toContain('SPI-1 · 4 芯');
   expect(collapsed.svg.match(/data-kind="harness"/g)).toHaveLength(1);
   expect(collapsed.svg).not.toContain('data-kind="wire"');
-  expect(collapsed.svg).toContain('L260 130');
+  expect(collapsed.svg).toContain('L270 120');
   expect(collapsed.width).toBeGreaterThan(500);
   expect(
     new DOMParser()
@@ -228,7 +228,7 @@ test('collapsed harness keeps every terminal connected, including mixed sides', 
   expect(geometry!.branches.match(/M/g)).toHaveLength(8);
   expect(geometry!.branches).toContain('M20 40');
   expect(geometry!.branches).toContain('M520 280');
-  expect(geometry!.trunk).toContain('L260 130');
+  expect(geometry!.trunk).toContain('L270 120');
   expect(geometry!.branches).not.toContain('NaN');
   expect(
     renderDiagramSvg(project).svg.match(/data-kind="harness"/g),
@@ -239,8 +239,25 @@ test('collapsed harness label sits on a long trunk and clears short gaps', () =>
   const project = example();
   project.harnesses[0].routePoints = [];
   const wide = collapsedHarnessGeometry(project, 'harness')!;
-  expect(wide.label.y).toBe(145);
+  expect(wide.label.y).toBe(150);
   project.devices[1].position.x = 170;
   const narrow = collapsedHarnessGeometry(project, 'harness')!;
   expect(narrow.label.y).toBeLessThan(project.devices[0].position.y);
+});
+
+test('collapsed harness junctions and bends sit on grid points', () => {
+  const project = example();
+  project.devices[0].position = { x: -90, y: 30 };
+  project.devices[1].position = { x: 390, y: 30 };
+  project.wires[1].source.terminalId = 'top';
+  project.wires[1].target.terminalId = 'bottom';
+  project.harnesses[0].routePoints = [{ x: 271, y: 137 }];
+  const geometry = collapsedHarnessGeometry(project, 'harness')!;
+  for (const coordinate of `${geometry.branches} ${geometry.trunk}`.matchAll(
+    /[ML](-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g,
+  )) {
+    expect(Number(coordinate[1]) % 30).toBe(0);
+    expect(Number(coordinate[2]) % 30).toBe(0);
+  }
+  expect(geometry.trunk).toContain('L270 150');
 });
