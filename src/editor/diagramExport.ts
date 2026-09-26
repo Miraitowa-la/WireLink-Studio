@@ -1,13 +1,8 @@
-import type {
-  DeviceInstance,
-  Project,
-  Side,
-  Wire,
-  WireEndpoint,
-} from '../model/project';
+import type { DeviceInstance, Project, Side, Wire } from '../model/project';
 import { getDeviceSize, SIDES } from './device';
 import { serializeProjectFile } from '../model/project';
 import { safeProjectName } from './projectFiles';
+import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
 
 type Point = { x: number; y: number };
 type Diagram = { svg: string; width: number; height: number };
@@ -23,32 +18,6 @@ const escapeXml = (value: string): string =>
 const text = (value: string, limit = 28) =>
   escapeXml(value.length > limit ? `${value.slice(0, limit - 1)}…` : value);
 const n = (value: number) => Number(value.toFixed(2));
-
-function terminalPoint(project: Project, endpoint: WireEndpoint): Point | null {
-  const device = project.devices.find((item) => item.id === endpoint.deviceId);
-  const terminal = device?.templateSnapshot.terminals.find(
-    (item) => item.id === endpoint.terminalId,
-  );
-  if (!device || !terminal) return null;
-  const sameSide = device.templateSnapshot.terminals
-    .filter((item) => item.side === terminal.side)
-    .sort((a, b) => a.order - b.order);
-  const fraction =
-    (sameSide.findIndex((item) => item.id === terminal.id) + 1) /
-    (sameSide.length + 1);
-  const { width, height } = getDeviceSize(device);
-  const { x, y } = device.position;
-  switch (terminal.side) {
-    case 'top':
-      return { x: x + width * fraction, y };
-    case 'bottom':
-      return { x: x + width * fraction, y: y + height };
-    case 'left':
-      return { x, y: y + height * fraction };
-    case 'right':
-      return { x: x + width, y: y + height * fraction };
-  }
-}
 
 function orthogonalPath(
   source: Point,
@@ -235,18 +204,15 @@ export function renderDiagramSvg(project: Project): Diagram {
       const children = project.wires.filter(
         (wire) => wire.harnessId === harness.id,
       );
-      return children.length
-        ? edgeSvg(
-            project,
-            children[0],
-            'harness',
-            harness.id,
-            `${harness.number || harness.name} · ${children.length} 芯`,
-            harness.templateSnapshot.color,
-            5,
-            harness.routePoints,
-          )
-        : '';
+      const geometry = collapsedHarnessGeometry(project, harness.id);
+      if (!geometry) return '';
+      const label = `${harness.number || harness.name} · ${children.length} 芯`;
+      const labelMarkup =
+        project.viewPreferences?.showLabels === false
+          ? ''
+          : `<g class="edge-label"><rect x="${n(geometry.label.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(geometry.label.y - 24)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(geometry.label.x)}" y="${n(geometry.label.y - 10)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
+      const color = escapeXml(harness.templateSnapshot.color);
+      return `<g class="diagram-object" data-kind="harness" data-id="${escapeXml(harness.id)}"><title>${text(label)}</title><path d="${geometry.branches}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.trunk}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.branches} ${geometry.trunk}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit"/>${labelMarkup}</g>`;
     })
     .join('');
   const devices = project.devices

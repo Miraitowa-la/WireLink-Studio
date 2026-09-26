@@ -26,6 +26,7 @@ import type {
   WireEndpoint,
 } from '../model/project';
 import { getDeviceSize, SIDES } from './device';
+import { collapsedHarnessGeometry } from './harnessGeometry';
 
 export const TEMPLATE_DRAG_TYPE = 'application/wirelink-device-template';
 
@@ -148,7 +149,37 @@ function RoutedEdge({
     />
   );
 }
-const edgeTypes = { routed: RoutedEdge };
+type HarnessEdge = Edge<
+  { trunk: string; branches: string; label: { x: number; y: number } },
+  'harness'
+>;
+
+function HarnessEdge({
+  data,
+  label,
+  style,
+  interactionWidth,
+}: EdgeProps<HarnessEdge>) {
+  if (!data) return null;
+  return (
+    <>
+      <BaseEdge
+        path={data.branches}
+        style={{ ...style, strokeWidth: 2.5 }}
+        interactionWidth={interactionWidth}
+      />
+      <BaseEdge
+        path={data.trunk}
+        labelX={data.label.x}
+        labelY={data.label.y}
+        label={label}
+        style={style}
+        interactionWidth={interactionWidth}
+      />
+    </>
+  );
+}
+const edgeTypes = { routed: RoutedEdge, harness: HarnessEdge };
 
 interface CanvasProps {
   project: Project;
@@ -276,6 +307,8 @@ function Canvas({
         );
         if (!wires.length) return [];
         const first = wires[0];
+        const geometry = collapsedHarnessGeometry(project, harness.id);
+        if (!geometry) return [];
         return [
           {
             id: `harness:${harness.id}`,
@@ -283,10 +316,8 @@ function Canvas({
             sourceHandle: first.source.terminalId,
             target: first.target.deviceId,
             targetHandle: first.target.terminalId,
-            type: harness.routePoints?.length ? 'routed' : 'step',
-            data: harness.routePoints?.length
-              ? { routePoints: harness.routePoints }
-              : undefined,
+            type: 'harness',
+            data: geometry,
             label:
               project.viewPreferences?.showLabels === false
                 ? undefined
@@ -300,6 +331,7 @@ function Canvas({
   }, [
     project.wires,
     project.harnesses,
+    project.devices,
     project.viewPreferences,
     selectedWireId,
     selectedHarnessId,

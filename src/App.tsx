@@ -938,6 +938,29 @@ export default function App() {
               </div>
             ))}
           </section>
+          {project.harnesses.length > 0 && (
+            <section className="library-section">
+              <div className="section-heading">
+                <h3>画布线束</h3>
+              </div>
+              {project.harnesses.map((harness) => (
+                <button
+                  key={harness.id}
+                  type="button"
+                  className="table-link"
+                  onClick={() => {
+                    setSelectedId(null);
+                    setSelectedWireId(null);
+                    setSelectedHarnessId(harness.id);
+                    setFocusTarget(null);
+                  }}
+                >
+                  {harness.number || harness.name} ·{' '}
+                  {harness.collapsed ? '已折叠' : '已展开'}
+                </button>
+              ))}
+            </section>
+          )}
         </aside>
 
         <section className="canvas-panel" aria-label="接线画布">
@@ -1165,12 +1188,18 @@ export default function App() {
                 />
               </label>
               {selectedWire.harnessId && (
-                <p className="hint">
-                  所属线束：
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedWireId(null);
+                    setSelectedHarnessId(selectedWire.harnessId!);
+                  }}
+                >
+                  选择所属线束：
                   {project.harnesses.find(
                     (item) => item.id === selectedWire.harnessId,
                   )?.name ?? '未知'}
-                </p>
+                </button>
               )}
               <button
                 type="button"

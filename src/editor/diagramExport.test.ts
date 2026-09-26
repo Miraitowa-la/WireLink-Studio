@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { createEmptyProject } from '../model/project';
 import { renderDiagramSvg, renderViewerHtml } from './diagramExport';
+import { collapsedHarnessGeometry } from './harnessGeometry';
 
 function example() {
   const project = createEmptyProject('SPI <图纸>');
@@ -148,4 +149,20 @@ test('offline viewer includes controls, selection and print layout', () => {
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   if (!script) throw new Error('HTML 查看页缺少脚本');
   expect(() => new Function(script)).not.toThrow();
+});
+
+test('collapsed harness keeps every terminal connected, including mixed sides', () => {
+  const project = example();
+  project.wires[1].source.terminalId = 'top';
+  project.wires[1].target.terminalId = 'bottom';
+  const geometry = collapsedHarnessGeometry(project, 'harness');
+  expect(geometry).not.toBeNull();
+  expect(geometry!.branches.match(/M/g)).toHaveLength(8);
+  expect(geometry!.branches).toContain('M20 40');
+  expect(geometry!.branches).toContain('M520 280');
+  expect(geometry!.trunk).toContain('L260 130');
+  expect(geometry!.branches).not.toContain('NaN');
+  expect(
+    renderDiagramSvg(project).svg.match(/data-kind="harness"/g),
+  ).toHaveLength(1);
 });
