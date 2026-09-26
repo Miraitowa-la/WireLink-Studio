@@ -53,32 +53,24 @@ test('adds a wire between compatible terminals and blocks duplicate and capacity
   expect(connected.wires[0]).toMatchObject({
     source: a,
     target: b,
-    name: '导线 1',
+    name: 'P1',
     color: '#123456',
   });
   expect(() => addWire(connected, b, a)).toThrow('已经连接');
   expect(() => addWire(connected, a, c)).toThrow('连接上限');
 });
 
-test('assigns the next available default wire name', () => {
+test('uses the clicked source terminal name in either direction', () => {
   const project = sampleProject();
-  project.devices.push({
-    ...project.devices[2],
-    id: 'd',
-    name: 'd',
-  });
-  project.wires = [
-    {
-      id: 'existing',
-      source: a,
-      target: b,
-      name: '导线 1',
-    },
-  ];
-  expect(
-    addWire(project, c, { deviceId: 'd', terminalId: 'pin' }).wires.at(-1)
-      ?.name,
-  ).toBe('导线 2');
+  for (const [index, label] of ['起点-A', '终点-B'].entries()) {
+    const device = project.devices[index];
+    device.templateSnapshot = {
+      ...device.templateSnapshot,
+      terminals: [{ ...device.templateSnapshot.terminals[0], label }],
+    };
+  }
+  expect(addWire(project, a, b).wires[0].name).toBe('起点-A');
+  expect(addWire(project, b, a).wires[0].name).toBe('终点-B');
 });
 
 test('requires mutual type compatibility and valid endpoints', () => {
