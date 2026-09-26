@@ -25,7 +25,7 @@ import type {
   TerminalType,
   WireEndpoint,
 } from '../model/project';
-import { getDeviceSize, SIDES } from './device';
+import { getDeviceSize, GRID_SIZE, SIDES } from './device';
 import { collapsedHarnessGeometry } from './harnessGeometry';
 
 export const TEMPLATE_DRAG_TYPE = 'application/wirelink-device-template';
@@ -113,6 +113,7 @@ function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
 }
 
 const nodeTypes = { device: DeviceNode };
+const canvasSnapGrid: [number, number] = [GRID_SIZE, GRID_SIZE];
 type RoutedEdge = Edge<{ routePoints: { x: number; y: number }[] }, 'routed'>;
 
 function RoutedEdge({
@@ -374,6 +375,8 @@ function Canvas({
         fitView
         fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
         connectionMode={ConnectionMode.Loose}
+        snapToGrid
+        snapGrid={canvasSnapGrid}
         onNodeClick={(_, node) => {
           onSelectWire(null);
           onSelectHarness(null);
@@ -408,7 +411,7 @@ function Canvas({
           'node.a11yDescription.default': '按回车选择设备，方向键移动设备',
         }}
       >
-        <Background gap={30} color="#a9bdcf" />
+        <Background gap={GRID_SIZE} color="#a9bdcf" />
         {project.devices.length > 1 && (
           <MiniMap
             pannable

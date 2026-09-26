@@ -7,7 +7,16 @@ import type {
   TerminalDefinition,
   TerminalType,
 } from '../model/project';
-import { createTerminal, reorderTerminals, SIDE_LABELS, SIDES } from './device';
+import {
+  createTerminal,
+  GRID_SIZE,
+  MIN_DEVICE_HEIGHT,
+  MIN_DEVICE_WIDTH,
+  reorderTerminals,
+  SIDE_LABELS,
+  SIDES,
+  snapSizeToGrid,
+} from './device';
 import { readImageAsset } from './assets';
 
 const roles: { value: ElectricalRole; label: string }[] = [
@@ -283,25 +292,41 @@ export function TemplateEditor({
             />
           </label>
           <label>
-            默认宽度
+            默认宽度（每格 30）
             <input
               type="number"
-              min="80"
+              min={MIN_DEVICE_WIDTH}
+              step={GRID_SIZE}
               value={draft.width}
               onChange={(event) =>
                 setDraft({ ...draft, width: Number(event.target.value) })
               }
+              onBlur={(event) => {
+                const value = Number(event.currentTarget.value);
+                setDraft((current) => ({
+                  ...current,
+                  width: snapSizeToGrid(value, MIN_DEVICE_WIDTH),
+                }));
+              }}
             />
           </label>
           <label>
-            默认高度
+            默认高度（每格 30）
             <input
               type="number"
-              min="80"
+              min={MIN_DEVICE_HEIGHT}
+              step={GRID_SIZE}
               value={draft.height}
               onChange={(event) =>
                 setDraft({ ...draft, height: Number(event.target.value) })
               }
+              onBlur={(event) => {
+                const value = Number(event.currentTarget.value);
+                setDraft((current) => ({
+                  ...current,
+                  height: snapSizeToGrid(value, MIN_DEVICE_HEIGHT),
+                }));
+              }}
             />
           </label>
           <label className="span-two">
@@ -515,8 +540,8 @@ export function TemplateEditor({
               !draft.name.trim() ||
               !Number.isFinite(draft.width) ||
               !Number.isFinite(draft.height) ||
-              draft.width < 80 ||
-              draft.height < 80 ||
+              draft.width < MIN_DEVICE_WIDTH ||
+              draft.height < MIN_DEVICE_HEIGHT ||
               draft.terminals.some(
                 (terminal) =>
                   !terminal.label.trim() ||
@@ -531,6 +556,8 @@ export function TemplateEditor({
                 {
                   ...draft,
                   name: draft.name.trim(),
+                  width: snapSizeToGrid(draft.width, MIN_DEVICE_WIDTH),
+                  height: snapSizeToGrid(draft.height, MIN_DEVICE_HEIGHT),
                   appearance:
                     draft.appearance.kind === 'image' && !imageAsset
                       ? { kind: 'default' }

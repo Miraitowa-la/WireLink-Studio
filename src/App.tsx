@@ -9,6 +9,12 @@ import {
   addDevice,
   createDeviceTemplate,
   createTerminalType,
+  getDeviceSize,
+  GRID_SIZE,
+  MIN_DEVICE_HEIGHT,
+  MIN_DEVICE_WIDTH,
+  snapPointToGrid,
+  snapSizeToGrid,
 } from './editor/device';
 import { TemplateEditor, TypeEditor } from './editor/LibraryEditors';
 import { HarnessTemplateEditor, HarnessWizard } from './editor/HarnessEditors';
@@ -490,8 +496,8 @@ export default function App() {
         current,
         template,
         position ?? {
-          x: 80 + (index % 3) * 320,
-          y: 80 + Math.floor(index / 3) * 240,
+          x: 90 + (index % 3) * 330,
+          y: 90 + Math.floor(index / 3) * 240,
         },
       ),
     );
@@ -504,6 +510,28 @@ export default function App() {
         device.id === id ? { ...device, ...patch } : device,
       ),
     }));
+  }
+
+  function updateDeviceSize(
+    device: DeviceInstance,
+    dimension: 'width' | 'height',
+    raw: number,
+    input: HTMLInputElement,
+  ) {
+    const current = getDeviceSize(device);
+    const next = getDeviceSize({
+      ...device,
+      size: {
+        ...current,
+        [dimension]: snapSizeToGrid(
+          raw,
+          dimension === 'width' ? MIN_DEVICE_WIDTH : MIN_DEVICE_HEIGHT,
+        ),
+      },
+    });
+    input.value = String(next[dimension]);
+    if (next[dimension] !== current[dimension])
+      updateDevice(device.id, { size: next });
   }
 
   function connectTerminals(source: WireEndpoint, target: WireEndpoint) {
@@ -1012,7 +1040,9 @@ export default function App() {
             }
             onConnect={connectTerminals}
             onAddDevice={placeDevice}
-            onMoveDevice={(id, position) => updateDevice(id, { position })}
+            onMoveDevice={(id, position) =>
+              updateDevice(id, { position: snapPointToGrid(position) })
+            }
           />
         </section>
 
@@ -1241,45 +1271,45 @@ export default function App() {
               </label>
               <div className="form-grid">
                 <label>
-                  宽度
+                  宽度（每格 30）
                   <input
+                    key={`${selectedDevice.id}:width:${getDeviceSize(selectedDevice).width}`}
                     type="number"
-                    min="80"
-                    value={
-                      selectedDevice.size?.width ??
-                      selectedDevice.templateSnapshot.width
+                    min={MIN_DEVICE_WIDTH}
+                    step={GRID_SIZE}
+                    defaultValue={getDeviceSize(selectedDevice).width}
+                    onBlur={(event) =>
+                      updateDeviceSize(
+                        selectedDevice,
+                        'width',
+                        Number(event.currentTarget.value),
+                        event.currentTarget,
+                      )
                     }
-                    onChange={(event) =>
-                      updateDevice(selectedDevice.id, {
-                        size: {
-                          width: Math.max(80, Number(event.target.value)),
-                          height:
-                            selectedDevice.size?.height ??
-                            selectedDevice.templateSnapshot.height,
-                        },
-                      })
-                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') event.currentTarget.blur();
+                    }}
                   />
                 </label>
                 <label>
-                  高度
+                  高度（每格 30）
                   <input
+                    key={`${selectedDevice.id}:height:${getDeviceSize(selectedDevice).height}`}
                     type="number"
-                    min="80"
-                    value={
-                      selectedDevice.size?.height ??
-                      selectedDevice.templateSnapshot.height
+                    min={MIN_DEVICE_HEIGHT}
+                    step={GRID_SIZE}
+                    defaultValue={getDeviceSize(selectedDevice).height}
+                    onBlur={(event) =>
+                      updateDeviceSize(
+                        selectedDevice,
+                        'height',
+                        Number(event.currentTarget.value),
+                        event.currentTarget,
+                      )
                     }
-                    onChange={(event) =>
-                      updateDevice(selectedDevice.id, {
-                        size: {
-                          width:
-                            selectedDevice.size?.width ??
-                            selectedDevice.templateSnapshot.width,
-                          height: Math.max(80, Number(event.target.value)),
-                        },
-                      })
-                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') event.currentTarget.blur();
+                    }}
                   />
                 </label>
               </div>
@@ -1313,8 +1343,8 @@ export default function App() {
                       id: crypto.randomUUID(),
                       name: `${selectedDevice.name} 副本`,
                       position: {
-                        x: selectedDevice.position.x + 40,
-                        y: selectedDevice.position.y + 40,
+                        x: selectedDevice.position.x + GRID_SIZE * 2,
+                        y: selectedDevice.position.y + GRID_SIZE * 2,
                       },
                     };
                     changeProject((current) => ({

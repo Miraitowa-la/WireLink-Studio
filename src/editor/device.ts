@@ -8,6 +8,19 @@ import type {
 } from '../model/project';
 
 export const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
+export const GRID_SIZE = 30;
+export const MIN_DEVICE_WIDTH = 180;
+export const MIN_DEVICE_HEIGHT = 120;
+
+export const snapToGrid = (value: number) =>
+  Math.round(value / GRID_SIZE) * GRID_SIZE || 0;
+export const snapPointToGrid = (point: { x: number; y: number }) => ({
+  x: snapToGrid(point.x),
+  y: snapToGrid(point.y),
+});
+export const snapSizeToGrid = (value: number, minimum: number) =>
+  Math.max(minimum, snapToGrid(Number.isFinite(value) ? value : minimum));
+const growToGrid = (value: number) => Math.ceil(value / GRID_SIZE) * GRID_SIZE;
 export const SIDE_LABELS: Record<Side, string> = {
   top: '上边',
   right: '右边',
@@ -31,7 +44,7 @@ export function createDeviceTemplate(): DeviceTemplate {
     name: '新设备',
     category: '',
     width: 240,
-    height: 160,
+    height: 180,
     appearance: { kind: 'default' },
     terminals: [],
   };
@@ -90,15 +103,19 @@ export function getDeviceSize(device: DeviceInstance): {
     terminals.filter((terminal) => terminal.side === 'right').length,
   );
   return {
-    width: Math.max(
-      device.size?.width ?? device.templateSnapshot.width,
-      (horizontal + 1) * 76,
-      180,
+    width: growToGrid(
+      Math.max(
+        device.size?.width ?? device.templateSnapshot.width,
+        (horizontal + 1) * 76,
+        MIN_DEVICE_WIDTH,
+      ),
     ),
-    height: Math.max(
-      device.size?.height ?? device.templateSnapshot.height,
-      (vertical + 1) * 48,
-      120,
+    height: growToGrid(
+      Math.max(
+        device.size?.height ?? device.templateSnapshot.height,
+        (vertical + 1) * 48,
+        MIN_DEVICE_HEIGHT,
+      ),
     ),
   };
 }
@@ -113,7 +130,7 @@ export function addDevice(
     templateId: template.id,
     templateSnapshot: structuredClone(template),
     name: template.name,
-    position,
+    position: snapPointToGrid(position),
     note: template.note,
   };
   return { ...project, devices: [...project.devices, instance] };
