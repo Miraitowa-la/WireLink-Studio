@@ -152,12 +152,18 @@ test('exports the same manual wire route used by the canvas', () => {
     { x: 270, y: 90 },
     { x: 270, y: 210 },
   ];
-  const path = wirePath(
+  const geometry = wirePath(
     terminalPoint(project, wire.source)!,
     terminalPoint(project, wire.target)!,
     wire.routePoints,
-  ).path;
-  expect(renderDiagramSvg(project).svg).toContain(`d="${path}"`);
+  );
+  const svg = renderDiagramSvg(project).svg;
+  expect(svg).toContain(`d="${geometry.path}"`);
+  const label = new DOMParser()
+    .parseFromString(svg, 'image/svg+xml')
+    .querySelector('[data-kind="wire"] .edge-label text')!;
+  expect(Number(label.getAttribute('x'))).toBeCloseTo(geometry.label.x, 1);
+  expect(Number(label.getAttribute('y')) - 4).toBeCloseTo(geometry.label.y, 1);
 });
 
 test('offline viewer includes controls, selection and print layout', () => {

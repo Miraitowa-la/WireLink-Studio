@@ -11,22 +11,31 @@ export function wirePath(
     to,
     insertIndex,
   }));
-  const longest = segments.reduce((best, segment) =>
-    Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) >
-    Math.hypot(best.to.x - best.from.x, best.to.y - best.from.y)
-      ? segment
-      : best,
+  const lengths = segments.map((segment) =>
+    Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y),
   );
+  let distance = lengths.reduce((total, length) => total + length, 0) / 2;
+  let label = source;
+  for (const [index, segment] of segments.entries()) {
+    const length = lengths[index];
+    if (distance > length && index < segments.length - 1) {
+      distance -= length;
+      continue;
+    }
+    const fraction = length ? distance / length : 0;
+    label = {
+      x: segment.from.x + (segment.to.x - segment.from.x) * fraction,
+      y: segment.from.y + (segment.to.y - segment.from.y) * fraction,
+    };
+    break;
+  }
   return {
     points,
     segments,
     path: points
       .map((point, index) => `${index ? 'L' : 'M'}${point.x} ${point.y}`)
       .join(' '),
-    label: {
-      x: (longest.from.x + longest.to.x) / 2,
-      y: (longest.from.y + longest.to.y) / 2,
-    },
+    label,
   };
 }
 

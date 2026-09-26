@@ -63,10 +63,14 @@ export function addWire(
       throw new Error(`端子“${terminal.label}”已达到连接上限`);
   }
 
+  const names = new Set(project.wires.map((wire) => wire.name));
+  let index = 1;
+  while (names.has(`导线 ${index}`)) index++;
   const wire: Wire = {
     id: crypto.randomUUID(),
     source,
     target,
+    name: `导线 ${index}`,
     color: sourceType.color,
   };
   return { ...project, wires: [...project.wires, wire] };

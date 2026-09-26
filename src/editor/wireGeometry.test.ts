@@ -11,11 +11,22 @@ test('wires connect exactly the ordered points, including diagonal segments', ()
   const geometry = wirePath(source, target, routePoints);
   expect(geometry.points).toEqual([source, ...routePoints, target]);
   expect(geometry.path).toBe('M180 90 L270 150 L330 150 L420 180');
-  expect(geometry.label).toEqual({ x: 225, y: 120 });
   expect(wirePath(source, target).path).toBe('M180 90 L420 180');
   expect(wirePath(source, target, [routePoints[1]]).path).toBe(
     'M180 90 L330 150 L420 180',
   );
+});
+
+test('places the label halfway along the complete wire length', () => {
+  const geometry = wirePath({ x: 0, y: 0 }, { x: 300, y: 120 }, [
+    { x: 90, y: 120 },
+    { x: 240, y: 120 },
+  ]);
+  expect(geometry.label).toEqual({ x: 120, y: 120 });
+  expect(wirePath({ x: 0, y: 0 }, { x: 60, y: 0 }).label).toEqual({
+    x: 30,
+    y: 0,
+  });
 });
 
 test('new point is inserted into the nearest segment in drawing order', () => {
