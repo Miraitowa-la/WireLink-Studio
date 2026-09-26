@@ -408,7 +408,7 @@ function Canvas({
           'node.a11yDescription.default': '按回车选择设备，方向键移动设备',
         }}
       >
-        <Background gap={24} color="#a9bdcf" />
+        <Background gap={30} color="#a9bdcf" />
         {project.devices.length > 1 && (
           <MiniMap
             pannable
