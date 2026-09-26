@@ -33,15 +33,7 @@ import {
   terminalOffset,
 } from './device';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
-import {
-  insertionIndex,
-  routeAxis,
-  routeTo,
-  terminalExit,
-  wirePath,
-  type Axis,
-  type Point,
-} from './wireGeometry';
+import { insertionIndex, wirePath, type Point } from './wireGeometry';
 
 export const TEMPLATE_DRAG_TYPE = 'application/wirelink-device-template';
 
@@ -149,10 +141,27 @@ function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
 
 const nodeTypes = { device: DeviceNode };
 const canvasSnapGrid: [number, number] = [GRID_SIZE, GRID_SIZE];
+// React Flow supplies the outer edge of the 10px handle; wires use its center.
+const terminalHandleRadius = 5;
+const handleCenter = (point: Point, side: Position): Point => ({
+  x:
+    point.x +
+    (side === Position.Left
+      ? terminalHandleRadius
+      : side === Position.Right
+        ? -terminalHandleRadius
+        : 0),
+  y:
+    point.y +
+    (side === Position.Top
+      ? terminalHandleRadius
+      : side === Position.Bottom
+        ? -terminalHandleRadius
+        : 0),
+});
 type Draft = {
   source: WireEndpoint;
-  steps: Point[][];
-  axis: Axis;
+  points: Point[];
   cursor: Point | null;
 };
 type CanvasMenu = {
@@ -166,26 +175,15 @@ type CanvasMenu = {
   canInsert?: boolean;
 };
 
-function terminalSide(project: Project, endpoint: WireEndpoint): Side | null {
-  return (
-    project.devices
-      .find((device) => device.id === endpoint.deviceId)
-      ?.templateSnapshot.terminals.find(
-        (terminal) => terminal.id === endpoint.terminalId,
-      )?.side ?? null
-  );
-}
-
-type RoutedEdge = Edge<
-  { routePoints: Point[]; sourceSide: Side; targetSide: Side },
-  'routed'
->;
+type RoutedEdge = Edge<{ routePoints: Point[] }, 'routed'>;
 
 function RoutedEdge({
   sourceX,
   sourceY,
+  sourcePosition,
   targetX,
   targetY,
+  targetPosition,
   data,
   label,
   style,
@@ -193,10 +191,8 @@ function RoutedEdge({
 }: EdgeProps<RoutedEdge>) {
   if (!data) return null;
   const geometry = wirePath(
-    { x: sourceX, y: sourceY },
-    { x: targetX, y: targetY },
-    data.sourceSide,
-    data.targetSide,
+    handleCenter({ x: sourceX, y: sourceY }, sourcePosition),
+    handleCenter({ x: targetX, y: targetY }, targetPosition),
     data.routePoints,
   );
   return (
@@ -306,13 +302,7 @@ function Canvas({
       if (event.key === 'Escape') setDraft(null);
       else if (event.key === 'Backspace')
         setDraft((current) =>
-          current ? { ...current, steps: current.steps.slice(0, -1) } : null,
-        );
-      else if (event.key === 'Tab')
-        setDraft((current) =>
-          current
-            ? { ...current, axis: current.axis === 'x' ? 'y' : 'x' }
-            : null,
+          current ? { ...current, points: current.points.slice(0, -1) } : null,
         );
       else return;
       event.preventDefault();
@@ -324,15 +314,13 @@ function Canvas({
   terminalClickRef.current = (endpoint) => {
     setMenu(null);
     if (!draft) {
-      const side = terminalSide(project, endpoint);
-      if (!side) return;
+      if (!terminalPoint(project, endpoint)) return;
       onSelectDevice(null);
       onSelectWire(null);
       onSelectHarness(null);
       setDraft({
         source: endpoint,
-        steps: [],
-        axis: routeAxis(side),
+        points: [],
         cursor: null,
       });
       return;
@@ -342,16 +330,8 @@ function Canvas({
       endpoint.terminalId === draft.source.terminalId
     )
       return;
-    const source = terminalPoint(project, draft.source);
-    const sourceSide = terminalSide(project, draft.source);
-    const target = terminalPoint(project, endpoint);
-    const targetSide = terminalSide(project, endpoint);
-    if (!source || !sourceSide || !target || !targetSide) return;
-    const points = draft.steps.flat();
-    const last = points.at(-1) ?? terminalExit(source, sourceSide);
-    const finish = routeTo(last, terminalExit(target, targetSide), draft.axis);
-    const routePoints = [...points, ...finish.slice(0, -1)];
-    if (onConnect(draft.source, endpoint, routePoints)) setDraft(null);
+    if (!terminalPoint(project, endpoint)) return;
+    if (onConnect(draft.source, endpoint, draft.points)) setDraft(null);
   };
 
   const projectNodes = useMemo<DeviceFlowNode[]>(
@@ -432,8 +412,6 @@ function Canvas({
                 index === dragging.pointIndex ? dragging.point : point,
               )
             : (wire.routePoints ?? []),
-        sourceSide: terminalSide(project, wire.source) ?? 'right',
-        targetSide: terminalSide(project, wire.target) ?? 'left',
       },
       interactionWidth: 16,
       label:
@@ -490,41 +468,10 @@ function Canvas({
     selectedWire && terminalPoint(project, selectedWire.source);
   const selectedTarget =
     selectedWire && terminalPoint(project, selectedWire.target);
-  const selectedSourceSide =
-    selectedWire && terminalSide(project, selectedWire.source);
-  const selectedTargetSide =
-    selectedWire && terminalSide(project, selectedWire.target);
-  const selectedGeometry =
-    selectedWire &&
-    selectedSource &&
-    selectedTarget &&
-    selectedSourceSide &&
-    selectedTargetSide
-      ? wirePath(
-          selectedSource,
-          selectedTarget,
-          selectedSourceSide,
-          selectedTargetSide,
-          selectedWire.routePoints,
-        )
-      : null;
   const draftSource = draft && terminalPoint(project, draft.source);
-  const draftSide = draft && terminalSide(project, draft.source);
-  const draftPoints = draft?.steps.flat() ?? [];
   const previewPoints =
-    draft && draftSource && draftSide
-      ? [
-          draftSource,
-          terminalExit(draftSource, draftSide),
-          ...draftPoints,
-          ...(draft.cursor
-            ? routeTo(
-                draftPoints.at(-1) ?? terminalExit(draftSource, draftSide),
-                draft.cursor,
-                draft.axis,
-              )
-            : []),
-        ]
+    draft && draftSource
+      ? [draftSource, ...draft.points, ...(draft.cursor ? [draft.cursor] : [])]
       : [];
 
   function menuAt(clientX: number, clientY: number): Point {
@@ -548,12 +495,10 @@ function Canvas({
     setDraft((current) => {
       if (!current) return null;
       const source = terminalPoint(project, current.source);
-      const side = terminalSide(project, current.source);
-      if (!source || !side) return null;
-      const last = current.steps.flat().at(-1) ?? terminalExit(source, side);
-      const step = routeTo(last, point, current.axis);
-      return step.length
-        ? { ...current, steps: [...current.steps, step], cursor: point }
+      if (!source) return null;
+      const last = current.points.at(-1) ?? source;
+      return point.x !== last.x || point.y !== last.y
+        ? { ...current, points: [...current.points, point], cursor: point }
         : current;
     });
   }
@@ -638,19 +583,14 @@ function Canvas({
           if (!wire) return;
           const source = terminalPoint(project, wire.source);
           const target = terminalPoint(project, wire.target);
-          const sourceSide = terminalSide(project, wire.source);
-          const targetSide = terminalSide(project, wire.target);
-          if (!source || !target || !sourceSide || !targetSide) return;
-          const insertPoint = snapPointToGrid(
-            screenToFlowPosition({ x: event.clientX, y: event.clientY }),
-          );
-          const geometry = wirePath(
-            source,
-            target,
-            sourceSide,
-            targetSide,
-            wire.routePoints,
-          );
+          if (!source || !target) return;
+          const clickPoint = screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          const insertPoint = snapPointToGrid(clickPoint);
+          const geometry = wirePath(source, target, wire.routePoints);
+          const insertIndex = insertionIndex(geometry.segments, clickPoint);
           onSelectDevice(null);
           onSelectHarness(null);
           onSelectWire(wire.id);
@@ -658,19 +598,10 @@ function Canvas({
             ...position,
             wireId: wire.id,
             insertPoint,
-            insertIndex: insertionIndex(geometry.segments, insertPoint),
-            canInsert:
-              !geometry.points.some(
-                (point) =>
-                  point.x === insertPoint.x && point.y === insertPoint.y,
-              ) &&
-              geometry.segments.some(
-                (segment) =>
-                  insertPoint.x >= Math.min(segment.from.x, segment.to.x) &&
-                  insertPoint.x <= Math.max(segment.from.x, segment.to.x) &&
-                  insertPoint.y >= Math.min(segment.from.y, segment.to.y) &&
-                  insertPoint.y <= Math.max(segment.from.y, segment.to.y),
-              ),
+            insertIndex,
+            canInsert: !geometry.points.some(
+              (point) => point.x === insertPoint.x && point.y === insertPoint.y,
+            ),
           });
         }}
         onPaneContextMenu={(event) => {
@@ -770,11 +701,8 @@ function Canvas({
           ))}
           {menu?.wireId === selectedWire?.id &&
             menu?.pointIndex !== undefined &&
-            selectedGeometry &&
             selectedSource &&
-            selectedTarget &&
-            selectedSourceSide &&
-            selectedTargetSide && (
+            selectedTarget && (
               <svg
                 className="wire-route-preview wire-route-delete-preview"
                 aria-hidden="true"
@@ -784,12 +712,35 @@ function Canvas({
                     wirePath(
                       selectedSource,
                       selectedTarget,
-                      selectedSourceSide,
-                      selectedTargetSide,
                       (selectedWire.routePoints ?? []).filter(
                         (_, index) => index !== menu?.pointIndex,
                       ),
                     ).path
+                  }
+                />
+              </svg>
+            )}
+          {menu &&
+            menu.wireId === selectedWire?.id &&
+            menu.pointIndex === undefined &&
+            menu.canInsert &&
+            menu.insertPoint &&
+            menu.insertIndex !== undefined &&
+            selectedSource &&
+            selectedTarget && (
+              <svg className="wire-route-preview" aria-hidden="true">
+                <path
+                  d={
+                    wirePath(selectedSource, selectedTarget, [
+                      ...(selectedWire.routePoints ?? []).slice(
+                        0,
+                        menu.insertIndex,
+                      ),
+                      menu.insertPoint,
+                      ...(selectedWire.routePoints ?? []).slice(
+                        menu.insertIndex,
+                      ),
+                    ]).path
                   }
                 />
               </svg>
@@ -809,7 +760,7 @@ function Canvas({
       </ReactFlow>
       {draft && (
         <div className="wire-route-hint">
-          点击网格点定路线，点击终点端子完成 · Tab 切换转角 · Backspace 撤回
+          点击网格点确定下一点，点击终点端子完成 · Backspace 撤回 · Esc 取消
           <button type="button" onClick={() => setDraft(null)}>
             取消
           </button>
@@ -849,8 +800,8 @@ function Canvas({
                 disabled={!menu.canInsert}
                 title={
                   menu.canInsert
-                    ? '在此网格点添加路径点'
-                    : '此处没有可插入的网格点，请在线段中间右键'
+                    ? '在最近的网格点添加路径点'
+                    : '最近的网格点已有路径点，请在其他位置右键'
                 }
                 onClick={() => {
                   const wire = project.wires.find(

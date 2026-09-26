@@ -155,8 +155,6 @@ test('exports the same manual wire route used by the canvas', () => {
   const path = wirePath(
     terminalPoint(project, wire.source)!,
     terminalPoint(project, wire.target)!,
-    'right',
-    'right',
     wire.routePoints,
   ).path;
   expect(renderDiagramSvg(project).svg).toContain(`d="${path}"`);

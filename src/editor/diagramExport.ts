@@ -33,26 +33,8 @@ function edgeSvg(
 ): string {
   const source = terminalPoint(project, wire.source);
   const target = terminalPoint(project, wire.target);
-  const sourceDevice = project.devices.find(
-    (device) => device.id === wire.source.deviceId,
-  );
-  const sourceSide = sourceDevice?.templateSnapshot.terminals.find(
-    (terminal) => terminal.id === wire.source.terminalId,
-  )?.side;
-  const targetDevice = project.devices.find(
-    (device) => device.id === wire.target.deviceId,
-  );
-  const targetSide = targetDevice?.templateSnapshot.terminals.find(
-    (terminal) => terminal.id === wire.target.terminalId,
-  )?.side;
-  if (!source || !target || !sourceSide || !targetSide) return '';
-  const geometry = wirePath(
-    source,
-    target,
-    sourceSide,
-    targetSide,
-    routePoints,
-  );
+  if (!source || !target) return '';
+  const geometry = wirePath(source, target, routePoints);
   const labelMarkup =
     project.viewPreferences?.showLabels === false || !label
       ? ''
