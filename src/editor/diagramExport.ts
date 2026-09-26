@@ -1,8 +1,9 @@
-import type { DeviceInstance, Project, Side, Wire } from '../model/project';
+import type { DeviceInstance, Project, Wire } from '../model/project';
 import { getDeviceSize, SIDES, terminalOffset } from './device';
 import { serializeProjectFile } from '../model/project';
 import { safeProjectName } from './projectFiles';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
+import { wirePath } from './wireGeometry';
 
 type Point = { x: number; y: number };
 type Diagram = { svg: string; width: number; height: number };
@@ -19,34 +20,6 @@ const text = (value: string, limit = 28) =>
   escapeXml(value.length > limit ? `${value.slice(0, limit - 1)}…` : value);
 const n = (value: number) => Number(value.toFixed(2));
 
-function orthogonalPath(
-  source: Point,
-  target: Point,
-  sourceSide: Side,
-  routePoints: Point[] = [],
-  offset = 0,
-): { path: string; label: Point } {
-  const points: Point[] = [source];
-  if (routePoints.length) {
-    for (const point of routePoints) {
-      points.push({ x: point.x, y: points.at(-1)!.y }, point);
-    }
-    points.push({ x: target.x, y: points.at(-1)!.y }, target);
-  } else if (sourceSide === 'top' || sourceSide === 'bottom') {
-    const middle = (source.y + target.y) / 2 + offset;
-    points.push({ x: source.x, y: middle }, { x: target.x, y: middle }, target);
-  } else {
-    const middle = (source.x + target.x) / 2 + offset;
-    points.push({ x: middle, y: source.y }, { x: middle, y: target.y }, target);
-  }
-  return {
-    path: points
-      .map((point, index) => `${index ? 'L' : 'M'}${n(point.x)} ${n(point.y)}`)
-      .join(' '),
-    label: points[Math.floor(points.length / 2)],
-  };
-}
-
 function edgeSvg(
   project: Project,
   wire: Wire,
@@ -56,7 +29,6 @@ function edgeSvg(
   color: string,
   width: number,
   routePoints?: Point[],
-  offset = 0,
   attributes = '',
 ): string {
   const source = terminalPoint(project, wire.source);
@@ -67,13 +39,19 @@ function edgeSvg(
   const sourceSide = sourceDevice?.templateSnapshot.terminals.find(
     (terminal) => terminal.id === wire.source.terminalId,
   )?.side;
-  if (!source || !target || !sourceSide) return '';
-  const geometry = orthogonalPath(
+  const targetDevice = project.devices.find(
+    (device) => device.id === wire.target.deviceId,
+  );
+  const targetSide = targetDevice?.templateSnapshot.terminals.find(
+    (terminal) => terminal.id === wire.target.terminalId,
+  )?.side;
+  if (!source || !target || !sourceSide || !targetSide) return '';
+  const geometry = wirePath(
     source,
     target,
     sourceSide,
+    targetSide,
     routePoints,
-    offset,
   );
   const labelMarkup =
     project.viewPreferences?.showLabels === false || !label
@@ -191,15 +169,6 @@ export function renderDiagramSvg(
           ?.collapsed,
     )
     .map((wire) => {
-      const siblings = wire.harnessId
-        ? project.wires.filter((item) => item.harnessId === wire.harnessId)
-        : [];
-      const offset =
-        siblings.length > 1
-          ? (siblings.findIndex((item) => item.id === wire.id) -
-              (siblings.length - 1) / 2) *
-            18
-          : 0;
       return edgeSvg(
         project,
         wire,
@@ -209,7 +178,6 @@ export function renderDiagramSvg(
         wire.color || '#64748b',
         wire.harnessId ? 2.5 : 2,
         wire.routePoints,
-        offset,
         includeHiddenHarnessViews && wire.harnessId
           ? ` data-harness-id="${escapeXml(wire.harnessId)}" data-view="expanded"${project.harnesses.find((harness) => harness.id === wire.harnessId)?.collapsed ? ' style="display:none"' : ''}`
           : '',

@@ -534,17 +534,27 @@ export default function App() {
       updateDevice(device.id, { size: next });
   }
 
-  function connectTerminals(source: WireEndpoint, target: WireEndpoint) {
+  function connectTerminals(
+    source: WireEndpoint,
+    target: WireEndpoint,
+    routePoints: { x: number; y: number }[],
+  ): boolean {
     const current = projectRef.current;
-    if (!current) return;
+    if (!current) return false;
     try {
       const next = addWire(current, source, target);
-      changeProject(() => next);
+      const wire = next.wires.at(-1)!;
+      changeProject(() => ({
+        ...next,
+        wires: [...next.wires.slice(0, -1), { ...wire, routePoints }],
+      }));
       setSelectedId(null);
       setSelectedHarnessId(null);
-      setSelectedWireId(next.wires.at(-1)!.id);
+      setSelectedWireId(wire.id);
+      return true;
     } catch (error) {
       setStatus({ kind: 'error', text: errorMessage(error) });
+      return false;
     }
   }
 
@@ -592,13 +602,17 @@ export default function App() {
     setSelectedWireId(null);
   }
 
-  function deleteSelectedWire() {
-    if (!selectedWireId || !window.confirm('删除这条导线？')) return;
+  function deleteWire(id: string) {
+    if (!window.confirm('删除这条导线？')) return;
     changeProject((current) => ({
       ...current,
-      wires: current.wires.filter((wire) => wire.id !== selectedWireId),
+      wires: current.wires.filter((wire) => wire.id !== id),
     }));
     setSelectedWireId(null);
+  }
+
+  function deleteSelectedWire() {
+    if (selectedWireId) deleteWire(selectedWireId);
   }
 
   function selectIssue(issue: ValidationIssue) {
@@ -1066,6 +1080,10 @@ export default function App() {
               })
             }
             onConnect={connectTerminals}
+            onUpdateWireRoute={(id, routePoints) =>
+              updateWire(id, { routePoints })
+            }
+            onDeleteWire={deleteWire}
             onAddDevice={placeDevice}
             onMoveDevice={(id, position) =>
               updateDevice(id, { position: snapPointToGrid(position) })
@@ -1394,7 +1412,7 @@ export default function App() {
             </div>
           ) : (
             <p className="empty-hint properties-placeholder">
-              点击设备、导线或线束以编辑属性。
+              点击端子开始手动走线；点击设备、导线或线束以编辑属性。
             </p>
           )}
         </aside>

@@ -483,6 +483,80 @@ p {
 .canvas-wrap .react-flow {
   background: #f7fafc;
 }
+.canvas-wrap .react-flow__viewport-portal {
+  pointer-events: none;
+}
+.wire-route-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+.wire-route-preview path {
+  fill: none;
+  stroke: #1764b1;
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+}
+.wire-route-delete-preview path {
+  stroke: #e07828;
+  stroke-width: 4;
+}
+.wire-route-point {
+  position: absolute;
+  z-index: 3;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  background: #1764b1;
+  box-shadow: 0 0 0 1px #1764b1;
+  transform: translate(-50%, -50%);
+  cursor: move;
+  pointer-events: auto;
+}
+.wire-route-hint {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+  padding: 7px 10px;
+  border: 1px solid #b5cfe8;
+  border-radius: 7px;
+  background: #fff;
+  color: #29445f;
+  box-shadow: 0 4px 14px #17334f18;
+  font-size: 11px;
+}
+.wire-route-hint button {
+  flex: none;
+  padding: 3px 7px;
+}
+.wire-context-menu {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  width: 180px;
+  padding: 5px;
+  border: 1px solid #cad7e4;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px #17334f26;
+}
+.wire-context-menu button {
+  border: 0;
+  padding: 7px 9px;
+  text-align: left;
+  font-size: 12px;
+}
 .react-flow__minimap {
   overflow: hidden;
   border: 1px solid #cbdbe9;
@@ -591,6 +665,7 @@ p {
   padding: 7px;
 }
 .terminal-handle.react-flow__handle {
+  pointer-events: all;
   width: 10px;
   height: 10px;
   border: 2px solid #fff;

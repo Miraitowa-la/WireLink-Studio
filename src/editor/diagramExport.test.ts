@@ -5,7 +5,8 @@ import {
   renderPrintPages,
   renderViewerHtml,
 } from './diagramExport';
-import { collapsedHarnessGeometry } from './harnessGeometry';
+import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
+import { wirePath } from './wireGeometry';
 
 function example() {
   const project = createEmptyProject('SPI <图纸>');
@@ -141,6 +142,24 @@ test('exports four-side terminals, embedded image and current harness view', () 
   expect(expanded.match(/data-kind="wire"/g)).toHaveLength(4);
   expect(expanded).not.toContain('data-kind="harness"');
   expect(expanded).toContain('MISO');
+});
+
+test('exports the same manual wire route used by the canvas', () => {
+  const project = example();
+  project.harnesses[0].collapsed = false;
+  const wire = project.wires[0];
+  wire.routePoints = [
+    { x: 270, y: 90 },
+    { x: 270, y: 210 },
+  ];
+  const path = wirePath(
+    terminalPoint(project, wire.source)!,
+    terminalPoint(project, wire.target)!,
+    'right',
+    'right',
+    wire.routePoints,
+  ).path;
+  expect(renderDiagramSvg(project).svg).toContain(`d="${path}"`);
 });
 
 test('offline viewer includes controls, selection and print layout', () => {
