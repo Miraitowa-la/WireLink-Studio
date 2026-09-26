@@ -1,6 +1,7 @@
 import { useEffect, useMemo, type DragEvent } from 'react';
 import {
   Background,
+  BaseEdge,
   ConnectionMode,
   Controls,
   Handle,
@@ -12,11 +13,13 @@ import {
   useReactFlow,
   type Connection,
   type Edge,
+  type EdgeProps,
   type Node,
   type NodeProps,
 } from '@xyflow/react';
 import type {
   DeviceInstance,
+  ImageAsset,
   Project,
   Side,
   TerminalType,
@@ -27,7 +30,11 @@ import { getDeviceSize, SIDES } from './device';
 export const TEMPLATE_DRAG_TYPE = 'application/wirelink-device-template';
 
 type DeviceFlowNode = Node<
-  { device: DeviceInstance; terminalTypes: TerminalType[] },
+  {
+    device: DeviceInstance;
+    terminalTypes: TerminalType[];
+    imageAsset?: ImageAsset;
+  },
   'device'
 >;
 
@@ -39,7 +46,7 @@ const positions: Record<Side, Position> = {
 };
 
 function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
-  const { device, terminalTypes } = data;
+  const { device, terminalTypes, imageAsset } = data;
   const { width, height } = getDeviceSize(device);
   const terminals = device.templateSnapshot.terminals;
   const colors = new Map(terminalTypes.map((type) => [type.id, type.color]));
@@ -50,6 +57,17 @@ function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
       style={{ width, height }}
     >
       <div className="device-node-center">
+        {device.templateSnapshot.appearance.kind === 'image' && imageAsset && (
+          <img
+            className="device-node-image"
+            src={imageAsset.data}
+            alt=""
+            style={{
+              objectFit:
+                device.templateSnapshot.appearance.imageFit ?? 'contain',
+            }}
+          />
+        )}
         <strong>{device.name}</strong>
         {device.templateSnapshot.category && (
           <small>{device.templateSnapshot.category}</small>
@@ -95,14 +113,54 @@ function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
 }
 
 const nodeTypes = { device: DeviceNode };
+type RoutedEdge = Edge<{ routePoints: { x: number; y: number }[] }, 'routed'>;
+
+function RoutedEdge({
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  data,
+  label,
+  style,
+  interactionWidth,
+}: EdgeProps<RoutedEdge>) {
+  const points = [
+    { x: sourceX, y: sourceY },
+    ...(data?.routePoints ?? []),
+    { x: targetX, y: targetY },
+  ];
+  const path = points
+    .slice(1)
+    .reduce(
+      (value, point, index) =>
+        `${value} L ${point.x},${points[index].y} L ${point.x},${point.y}`,
+      `M ${sourceX},${sourceY}`,
+    );
+  const middle = points[Math.floor(points.length / 2)];
+  return (
+    <BaseEdge
+      path={path}
+      labelX={middle.x}
+      labelY={middle.y}
+      label={label}
+      style={style}
+      interactionWidth={interactionWidth}
+    />
+  );
+}
+const edgeTypes = { routed: RoutedEdge };
 
 interface CanvasProps {
   project: Project;
   selectedDeviceId: string | null;
   selectedWireId: string | null;
+  selectedHarnessId: string | null;
   focusTarget: { kind: 'device' | 'wire'; id: string } | null;
   onSelectDevice(id: string | null): void;
   onSelectWire(id: string | null): void;
+  onSelectHarness(id: string | null): void;
+  onToggleHarness(id: string): void;
   onConnect(source: WireEndpoint, target: WireEndpoint): void;
   onAddDevice(templateId: string, position: { x: number; y: number }): void;
   onMoveDevice(id: string, position: { x: number; y: number }): void;
@@ -112,9 +170,12 @@ function Canvas({
   project,
   selectedDeviceId,
   selectedWireId,
+  selectedHarnessId,
   focusTarget,
   onSelectDevice,
   onSelectWire,
+  onSelectHarness,
+  onToggleHarness,
   onConnect,
   onAddDevice,
   onMoveDevice,
@@ -127,9 +188,15 @@ function Canvas({
         type: 'device',
         position: device.position,
         selected: selectedDeviceId === device.id,
-        data: { device, terminalTypes: project.terminalTypes },
+        data: {
+          device,
+          terminalTypes: project.terminalTypes,
+          imageAsset: project.assets.find(
+            (asset) => asset.id === device.templateSnapshot.appearance.assetId,
+          ),
+        },
       })),
-    [project.devices, project.terminalTypes, selectedDeviceId],
+    [project.devices, project.terminalTypes, project.assets, selectedDeviceId],
   );
   const [nodes, setNodes, onNodesChange] =
     useNodesState<DeviceFlowNode>(projectNodes);
@@ -164,24 +231,80 @@ function Canvas({
     }
     if (point) void setCenter(point.x, point.y, { zoom: 1, duration: 200 });
   }, [focusTarget, setCenter]);
-  const edges = useMemo<Edge[]>(
-    () =>
-      project.wires.map((wire) => ({
-        id: wire.id,
-        source: wire.source.deviceId,
-        sourceHandle: wire.source.terminalId,
-        target: wire.target.deviceId,
-        targetHandle: wire.target.terminalId,
-        type: 'step',
-        label:
-          project.viewPreferences?.showLabels === false
-            ? undefined
-            : [wire.number, wire.name].filter(Boolean).join(' · ') || undefined,
-        style: { stroke: wire.color || '#64748b', strokeWidth: 2 },
-        selected: wire.id === selectedWireId,
-      })),
-    [project.wires, project.viewPreferences, selectedWireId],
-  );
+  const edges = useMemo<Edge[]>(() => {
+    const visibleWires = project.wires.filter(
+      (wire) =>
+        !wire.harnessId ||
+        !project.harnesses.find((harness) => harness.id === wire.harnessId)
+          ?.collapsed,
+    );
+    const wireEdges = visibleWires.map((wire) => ({
+      id: wire.id,
+      source: wire.source.deviceId,
+      sourceHandle: wire.source.terminalId,
+      target: wire.target.deviceId,
+      targetHandle: wire.target.terminalId,
+      type: wire.routePoints?.length ? 'routed' : 'step',
+      data: wire.routePoints?.length
+        ? { routePoints: wire.routePoints }
+        : undefined,
+      pathOptions: wire.harnessId
+        ? {
+            offset:
+              20 +
+              project.wires
+                .filter((item) => item.harnessId === wire.harnessId)
+                .findIndex((item) => item.id === wire.id) *
+                16,
+          }
+        : undefined,
+      interactionWidth: 16,
+      label:
+        project.viewPreferences?.showLabels === false
+          ? undefined
+          : [wire.number, wire.name].filter(Boolean).join(' · ') || undefined,
+      style: {
+        stroke: wire.color || '#64748b',
+        strokeWidth: wire.harnessId ? 2.5 : 2,
+      },
+      selected: wire.id === selectedWireId,
+    }));
+    const harnessEdges = project.harnesses
+      .filter((harness) => harness.collapsed)
+      .flatMap((harness) => {
+        const wires = project.wires.filter(
+          (wire) => wire.harnessId === harness.id,
+        );
+        if (!wires.length) return [];
+        const first = wires[0];
+        return [
+          {
+            id: `harness:${harness.id}`,
+            source: first.source.deviceId,
+            sourceHandle: first.source.terminalId,
+            target: first.target.deviceId,
+            targetHandle: first.target.terminalId,
+            type: harness.routePoints?.length ? 'routed' : 'step',
+            data: harness.routePoints?.length
+              ? { routePoints: harness.routePoints }
+              : undefined,
+            label:
+              project.viewPreferences?.showLabels === false
+                ? undefined
+                : `${harness.number || harness.name} · ${wires.length} 芯`,
+            style: { stroke: harness.templateSnapshot.color, strokeWidth: 5 },
+            selected: harness.id === selectedHarnessId,
+          },
+        ];
+      });
+    return [...wireEdges, ...harnessEdges];
+  }, [
+    project.wires,
+    project.harnesses,
+    project.viewPreferences,
+    selectedWireId,
+    selectedHarnessId,
+  ]);
 
   function connect(connection: Connection) {
     if (!connection.sourceHandle || !connection.targetHandle) return;
@@ -216,20 +339,36 @@ function Canvas({
         onNodesChange={onNodesChange}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
         connectionMode={ConnectionMode.Loose}
         onNodeClick={(_, node) => {
           onSelectWire(null);
+          onSelectHarness(null);
           onSelectDevice(node.id);
         }}
         onEdgeClick={(_, edge) => {
           onSelectDevice(null);
-          onSelectWire(edge.id);
+          if (edge.id.startsWith('harness:')) {
+            onSelectWire(null);
+            onSelectHarness(edge.id.slice(8));
+          } else {
+            onSelectHarness(null);
+            onSelectWire(edge.id);
+          }
+        }}
+        onEdgeDoubleClick={(_, edge) => {
+          if (edge.id.startsWith('harness:')) onToggleHarness(edge.id.slice(8));
+          else {
+            const wire = project.wires.find((item) => item.id === edge.id);
+            if (wire?.harnessId) onToggleHarness(wire.harnessId);
+          }
         }}
         onPaneClick={() => {
           onSelectDevice(null);
           onSelectWire(null);
+          onSelectHarness(null);
         }}
         onNodeDragStop={(_, node) => onMoveDevice(node.id, node.position)}
         onConnect={connect}
@@ -239,7 +378,16 @@ function Canvas({
         }}
       >
         <Background gap={24} color="#dbe4ed" />
-        <MiniMap pannable zoomable />
+        {project.devices.length > 1 && (
+          <MiniMap
+            pannable
+            zoomable
+            style={{ width: 160, height: 100, bottom: 18 }}
+            nodeColor="#8fb4d8"
+            nodeStrokeColor="#4d7196"
+            maskColor="#1764b11a"
+          />
+        )}
         <Controls />
       </ReactFlow>
       {project.devices.length === 0 && (

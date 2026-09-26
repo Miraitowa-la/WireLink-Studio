@@ -9,6 +9,14 @@ import {
   createTerminalType,
 } from './editor/device';
 import { TemplateEditor, TypeEditor } from './editor/LibraryEditors';
+import { HarnessTemplateEditor, HarnessWizard } from './editor/HarnessEditors';
+import {
+  createHarnessConnection,
+  createHarnessTemplate,
+  installHarnessPresets,
+  type ConductorMapping,
+} from './editor/harness';
+import { pruneAssets } from './editor/assets';
 import {
   hasFilePicker,
   isPickerCancel,
@@ -23,6 +31,9 @@ import {
   terminalTypeSchema,
   type DeviceInstance,
   type DeviceTemplate,
+  type ImageAsset,
+  type HarnessTemplate,
+  type HarnessConnection,
   type Project,
   type TerminalType,
   type Wire,
@@ -31,7 +42,9 @@ import {
 
 type Editor =
   | { kind: 'type'; value: TerminalType }
-  | { kind: 'template'; value: DeviceTemplate };
+  | { kind: 'template'; value: DeviceTemplate }
+  | { kind: 'harness-template'; value: HarnessTemplate }
+  | { kind: 'harness-wizard' };
 type Status = { kind: 'info' | 'error'; text: string } | null;
 
 export default function App() {
@@ -40,6 +53,9 @@ export default function App() {
   const [dirty, setDirty] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
+  const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(
+    null,
+  );
   const [focusTarget, setFocusTarget] = useState<{
     kind: 'device' | 'wire';
     id: string;
@@ -93,9 +109,10 @@ export default function App() {
         project &&
         (event.key === 'Delete' || event.key === 'Backspace')
       ) {
-        if (selectedWireId || selectedId) {
+        if (selectedHarnessId || selectedWireId || selectedId) {
           event.preventDefault();
-          if (selectedWireId) deleteSelectedWire();
+          if (selectedHarnessId) deleteSelectedHarness();
+          else if (selectedWireId) deleteSelectedWire();
           else deleteSelectedDevice();
         }
       }
@@ -128,6 +145,9 @@ export default function App() {
     );
     setSelectedWireId((id) =>
       next.wires.some((wire) => wire.id === id) ? id : null,
+    );
+    setSelectedHarnessId((id) =>
+      next.harnesses.some((harness) => harness.id === id) ? id : null,
     );
   }
 
@@ -163,6 +183,7 @@ export default function App() {
     setDirty(true);
     setSelectedId(null);
     setSelectedWireId(null);
+    setSelectedHarnessId(null);
     setFocusTarget(null);
     setStatus({ kind: 'info', text: '空工程已创建，请显式保存到文件' });
   }
@@ -178,6 +199,7 @@ export default function App() {
     setDirty(false);
     setSelectedId(null);
     setSelectedWireId(null);
+    setSelectedHarnessId(null);
     setFocusTarget(null);
     setStatus(null);
   }
@@ -193,6 +215,7 @@ export default function App() {
     setDirty(false);
     setSelectedId(null);
     setSelectedWireId(null);
+    setSelectedHarnessId(null);
     setFocusTarget(null);
     setStatus({ kind: 'info', text: `已打开工程“${next.name}”` });
   }
@@ -270,17 +293,86 @@ export default function App() {
     setEditor(null);
   }
 
-  function saveTemplate(value: DeviceTemplate) {
+  function saveTemplate(value: DeviceTemplate, asset?: ImageAsset) {
     if (!editor) return;
     if (!deviceTemplateSchema.safeParse(value).success) {
       setStatus({ kind: 'error', text: '设备模板信息无效，请检查尺寸和端子' });
       return;
     }
+    changeProject((current) =>
+      pruneAssets({
+        ...current,
+        deviceLibrary: upsert(current.deviceLibrary, value),
+        assets: asset ? [...current.assets, asset] : current.assets,
+      }),
+    );
+    setEditor(null);
+  }
+
+  function saveHarnessTemplate(value: HarnessTemplate) {
     changeProject((current) => ({
       ...current,
-      deviceLibrary: upsert(current.deviceLibrary, value),
+      harnessLibrary: upsert(current.harnessLibrary, value),
     }));
     setEditor(null);
+  }
+
+  function createHarness(
+    template: HarnessTemplate,
+    sourceId: string,
+    targetId: string,
+    mappings: ConductorMapping[],
+    details: {
+      name: string;
+      number: string;
+      note: string;
+      cableModel: string;
+      shielded: boolean;
+    },
+  ) {
+    const current = projectRef.current;
+    if (!current) return '工程不存在';
+    try {
+      const next = createHarnessConnection(
+        current,
+        template,
+        sourceId,
+        targetId,
+        mappings,
+        details,
+      );
+      changeProject(() => next);
+      setEditor(null);
+      setSelectedId(null);
+      setSelectedWireId(null);
+      setSelectedHarnessId(next.harnesses.at(-1)!.id);
+      return null;
+    } catch (error) {
+      return errorMessage(error);
+    }
+  }
+
+  function updateHarness(id: string, patch: Partial<HarnessConnection>) {
+    changeProject((current) => ({
+      ...current,
+      harnesses: current.harnesses.map((harness) =>
+        harness.id === id ? { ...harness, ...patch } : harness,
+      ),
+    }));
+  }
+
+  function deleteSelectedHarness() {
+    if (!selectedHarnessId || !window.confirm('删除该线束及所有芯线？')) return;
+    changeProject((current) => ({
+      ...current,
+      harnesses: current.harnesses.filter(
+        (item) => item.id !== selectedHarnessId,
+      ),
+      wires: current.wires.filter(
+        (item) => item.harnessId !== selectedHarnessId,
+      ),
+    }));
+    setSelectedHarnessId(null);
   }
 
   function deleteType(type: TerminalType) {
@@ -293,11 +385,21 @@ export default function App() {
         device.templateSnapshot.terminals.some(
           (terminal) => terminal.typeId === type.id,
         ),
+      ) ||
+      project.harnessLibrary.some((template) =>
+        template.conductors.some(
+          (conductor) => conductor.terminalTypeId === type.id,
+        ),
+      ) ||
+      project.harnesses.some((harness) =>
+        harness.templateSnapshot.conductors.some(
+          (conductor) => conductor.terminalTypeId === type.id,
+        ),
       );
     if (referenced) {
       setStatus({
         kind: 'error',
-        text: `端子类型“${type.name}”仍被模板或设备实例引用，不能删除`,
+        text: `端子类型“${type.name}”仍被设备或线束引用，不能删除`,
       });
       return;
     }
@@ -323,12 +425,14 @@ export default function App() {
       return;
     }
     if (!window.confirm(`删除设备模板“${template.name}”？`)) return;
-    changeProject((current) => ({
-      ...current,
-      deviceLibrary: current.deviceLibrary.filter(
-        (item) => item.id !== template.id,
-      ),
-    }));
+    changeProject((current) =>
+      pruneAssets({
+        ...current,
+        deviceLibrary: current.deviceLibrary.filter(
+          (item) => item.id !== template.id,
+        ),
+      }),
+    );
   }
 
   function placeDevice(
@@ -369,6 +473,7 @@ export default function App() {
       const next = addWire(current, source, target);
       changeProject(() => next);
       setSelectedId(null);
+      setSelectedHarnessId(null);
       setSelectedWireId(next.wires.at(-1)!.id);
     } catch (error) {
       setStatus({ kind: 'error', text: errorMessage(error) });
@@ -402,7 +507,7 @@ export default function App() {
           .map((wire) => wire.harnessId)
           .filter((id): id is string => !!id),
       );
-      return {
+      return pruneAssets({
         ...current,
         devices: current.devices.filter((device) => device.id !== selectedId),
         wires: current.wires.filter(
@@ -413,7 +518,7 @@ export default function App() {
         harnesses: current.harnesses.filter(
           (harness) => !removedHarnesses.has(harness.id),
         ),
-      };
+      });
     });
     setSelectedId(null);
     setSelectedWireId(null);
@@ -430,14 +535,36 @@ export default function App() {
 
   function selectIssue(issue: ValidationIssue) {
     if (issue.wireId) {
-      setSelectedWireId(issue.wireId);
-      setSelectedId(null);
-      setFocusTarget({ kind: 'wire', id: issue.wireId });
+      locateWire(issue.wireId);
     } else if (issue.deviceId) {
       setSelectedId(issue.deviceId);
       setSelectedWireId(null);
+      setSelectedHarnessId(null);
       setFocusTarget({ kind: 'device', id: issue.deviceId });
     }
+  }
+
+  function locateWire(id: string) {
+    const wire = projectRef.current?.wires.find((item) => item.id === id);
+    if (
+      wire?.harnessId &&
+      projectRef.current?.harnesses.some(
+        (harness) => harness.id === wire.harnessId && harness.collapsed,
+      )
+    ) {
+      changeProject((current) => ({
+        ...current,
+        harnesses: current.harnesses.map((harness) =>
+          harness.id === wire.harnessId
+            ? { ...harness, collapsed: false }
+            : harness,
+        ),
+      }));
+    }
+    setSelectedWireId(id);
+    setSelectedId(null);
+    setSelectedHarnessId(null);
+    setFocusTarget({ kind: 'wire', id });
   }
 
   const currentTypes = project?.terminalTypes ?? [];
@@ -447,6 +574,9 @@ export default function App() {
   );
   const selectedWire = project?.wires.find(
     (wire) => wire.id === selectedWireId,
+  );
+  const selectedHarness = project?.harnesses.find(
+    (harness) => harness.id === selectedHarnessId,
   );
   const fileInputElement = (
     <input
@@ -554,7 +684,7 @@ export default function App() {
         <aside className="sidebar" aria-label="资料库">
           <div className="sidebar-heading">
             <h2>资料库</h2>
-            <p>端子与设备模板</p>
+            <p>端子、设备与线束模板</p>
           </div>
           <section className="library-section">
             <div className="section-heading">
@@ -665,19 +795,99 @@ export default function App() {
               </div>
             ))}
           </section>
+          <section className="library-section">
+            <div className="section-heading">
+              <h3>线束模板</h3>
+              <button
+                type="button"
+                onClick={() =>
+                  setEditor({
+                    kind: 'harness-template',
+                    value: createHarnessTemplate(project.terminalTypes[0]?.id),
+                  })
+                }
+                disabled={!project.terminalTypes.length}
+              >
+                新增
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => changeProject(installHarnessPresets)}
+            >
+              添加 SPI-4 / RS485-2 预设
+            </button>
+            {project.harnessLibrary.map((template) => (
+              <div key={template.id} className="library-item">
+                <span
+                  className="color-dot"
+                  style={{ backgroundColor: template.color }}
+                />
+                <span className="library-item-name">
+                  {template.name} · {template.conductors.length} 芯
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditor({ kind: 'harness-template', value: template })
+                  }
+                >
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  className="danger-text"
+                  onClick={() => {
+                    if (
+                      project.harnesses.some(
+                        (item) => item.templateId === template.id,
+                      )
+                    ) {
+                      setStatus({
+                        kind: 'error',
+                        text: '该线束模板仍被线束引用',
+                      });
+                      return;
+                    }
+                    if (window.confirm(`删除线束模板“${template.name}”？`))
+                      changeProject((current) => ({
+                        ...current,
+                        harnessLibrary: current.harnessLibrary.filter(
+                          (item) => item.id !== template.id,
+                        ),
+                      }));
+                  }}
+                >
+                  删除
+                </button>
+              </div>
+            ))}
+          </section>
         </aside>
 
         <section className="canvas-panel" aria-label="接线画布">
           <div className="canvas-heading">
             <span>接线画布</span>
             <span>
-              {project.devices.length} 台设备 · {project.wires.length} 条导线
+              {project.devices.length} 台设备 · {project.wires.length} 条导线 ·{' '}
+              {project.harnesses.length} 个线束
             </span>
+            <button
+              type="button"
+              disabled={
+                project.devices.length < 2 ||
+                project.harnessLibrary.length === 0
+              }
+              onClick={() => setEditor({ kind: 'harness-wizard' })}
+            >
+              创建线束
+            </button>
           </div>
           <DeviceCanvas
             project={project}
             selectedDeviceId={selectedId}
             selectedWireId={selectedWireId}
+            selectedHarnessId={selectedHarnessId}
             focusTarget={focusTarget}
             onSelectDevice={(id) => {
               setSelectedId(id);
@@ -687,6 +897,16 @@ export default function App() {
               setSelectedWireId(id);
               setFocusTarget(null);
             }}
+            onSelectHarness={(id) => {
+              setSelectedHarnessId(id);
+              setFocusTarget(null);
+            }}
+            onToggleHarness={(id) =>
+              updateHarness(id, {
+                collapsed: !project.harnesses.find((item) => item.id === id)
+                  ?.collapsed,
+              })
+            }
             onConnect={connectTerminals}
             onAddDevice={placeDevice}
             onMoveDevice={(id, position) => updateDevice(id, { position })}
@@ -697,14 +917,126 @@ export default function App() {
           <div className="sidebar-heading">
             <h2>属性</h2>
             <p>
-              {selectedWire
-                ? '普通导线'
-                : selectedDevice
-                  ? '设备实例'
-                  : '选择画布中的设备或导线'}
+              {selectedHarness
+                ? '线束'
+                : selectedWire
+                  ? '普通导线'
+                  : selectedDevice
+                    ? '设备实例'
+                    : '选择画布中的设备、导线或线束'}
             </p>
           </div>
-          {selectedWire ? (
+          {selectedHarness ? (
+            <div className="properties-body">
+              <p className="hint">
+                {selectedHarness.templateSnapshot.name} ·{' '}
+                {
+                  project.wires.filter(
+                    (wire) => wire.harnessId === selectedHarness.id,
+                  ).length
+                }{' '}
+                芯
+              </p>
+              <label>
+                名称
+                <input
+                  value={selectedHarness.name}
+                  onChange={(event) =>
+                    updateHarness(selectedHarness.id, {
+                      name: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                编号
+                <input
+                  value={selectedHarness.number ?? ''}
+                  onChange={(event) =>
+                    updateHarness(selectedHarness.id, {
+                      number: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                线缆型号
+                <input
+                  value={selectedHarness.cableModel ?? ''}
+                  onChange={(event) =>
+                    updateHarness(selectedHarness.id, {
+                      cableModel: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={selectedHarness.shielded ?? false}
+                  onChange={(event) =>
+                    updateHarness(selectedHarness.id, {
+                      shielded: event.target.checked,
+                    })
+                  }
+                />
+                屏蔽线缆
+              </label>
+              <label>
+                备注
+                <textarea
+                  rows={3}
+                  value={selectedHarness.note ?? ''}
+                  onChange={(event) =>
+                    updateHarness(selectedHarness.id, {
+                      note: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <RoutePointsInput
+                key={selectedHarness.id}
+                points={selectedHarness.routePoints}
+                onSave={(points) =>
+                  updateHarness(selectedHarness.id, { routePoints: points })
+                }
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  updateHarness(selectedHarness.id, {
+                    collapsed: !selectedHarness.collapsed,
+                  })
+                }
+              >
+                {selectedHarness.collapsed ? '展开芯线' : '折叠线束'}
+              </button>
+              <h3>芯线</h3>
+              {project.wires
+                .filter((wire) => wire.harnessId === selectedHarness.id)
+                .map((wire) => (
+                  <button
+                    key={wire.id}
+                    type="button"
+                    className="table-link"
+                    onClick={() => {
+                      updateHarness(selectedHarness.id, { collapsed: false });
+                      setSelectedHarnessId(null);
+                      setSelectedWireId(wire.id);
+                    }}
+                  >
+                    {wire.name || wire.conductorId}
+                  </button>
+                ))}
+              <button
+                type="button"
+                className="danger-text"
+                onClick={deleteSelectedHarness}
+              >
+                删除线束
+              </button>
+            </div>
+          ) : selectedWire ? (
             <div className="properties-body">
               <p className="hint">
                 {
@@ -757,6 +1089,14 @@ export default function App() {
                   }
                 />
               </label>
+              {selectedWire.harnessId && (
+                <p className="hint">
+                  所属线束：
+                  {project.harnesses.find(
+                    (item) => item.id === selectedWire.harnessId,
+                  )?.name ?? '未知'}
+                </p>
+              )}
               <button
                 type="button"
                 className="danger-text"
@@ -888,7 +1228,7 @@ export default function App() {
             </div>
           ) : (
             <p className="empty-hint properties-placeholder">
-              点击设备或导线以编辑属性。
+              点击设备、导线或线束以编辑属性。
             </p>
           )}
         </aside>
@@ -896,11 +1236,7 @@ export default function App() {
       <InspectionPanel
         project={project}
         onSelectIssue={selectIssue}
-        onSelectWire={(id) => {
-          setSelectedWireId(id);
-          setSelectedId(null);
-          setFocusTarget({ kind: 'wire', id });
-        }}
+        onSelectWire={locateWire}
       />
       <footer className="bottom-bar">
         <span>工程版本 {project.version}</span>
@@ -929,7 +1265,24 @@ export default function App() {
           key={editor.value.id}
           initial={editor.value}
           terminalTypes={project.terminalTypes}
+          assets={project.assets}
           onSave={saveTemplate}
+          onClose={() => setEditor(null)}
+        />
+      )}
+      {editor?.kind === 'harness-template' && (
+        <HarnessTemplateEditor
+          key={editor.value.id}
+          initial={editor.value}
+          types={project.terminalTypes}
+          onSave={saveHarnessTemplate}
+          onClose={() => setEditor(null)}
+        />
+      )}
+      {editor?.kind === 'harness-wizard' && (
+        <HarnessWizard
+          project={project}
+          onCreate={createHarness}
           onClose={() => setEditor(null)}
         />
       )}
@@ -945,4 +1298,60 @@ function upsert<T extends { id: string }>(items: T[], value: T): T[] {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '操作失败，请重试';
+}
+
+function RoutePointsInput({
+  points,
+  onSave,
+}: {
+  points?: { x: number; y: number }[];
+  onSave(points?: { x: number; y: number }[]): void;
+}) {
+  const [text, setText] = useState(
+    points?.map((point) => `${point.x},${point.y}`).join('; ') ?? '',
+  );
+  const [error, setError] = useState('');
+  useEffect(
+    () =>
+      setText(points?.map((point) => `${point.x},${point.y}`).join('; ') ?? ''),
+    [points],
+  );
+  function commit() {
+    const chunks = text.trim() ? text.split(/[;\n]+/) : [];
+    const parsed = chunks.map((chunk) =>
+      chunk.split(',').map((value) => value.trim()),
+    );
+    if (
+      parsed.some(
+        (pair) =>
+          pair.length !== 2 ||
+          pair.some((value) => !value || !Number.isFinite(Number(value))),
+      )
+    ) {
+      setError('路线点格式应为 x,y；多个点用分号分隔');
+      return;
+    }
+    setError('');
+    const next = parsed.length
+      ? parsed.map(([x, y]) => ({ x: Number(x), y: Number(y) }))
+      : undefined;
+    if (JSON.stringify(next) !== JSON.stringify(points)) onSave(next);
+  }
+  return (
+    <label>
+      路线点（画布坐标，正交连接）
+      <textarea
+        rows={2}
+        placeholder="例如 300,100; 300,260"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+      />
+      {error && (
+        <span role="alert" className="status-error">
+          {error}
+        </span>
+      )}
+    </label>
+  );
 }

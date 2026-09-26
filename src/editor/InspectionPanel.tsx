@@ -4,6 +4,7 @@ import { safeProjectName } from './projectFiles';
 import {
   csvForTerminalRows,
   inspectProject,
+  harnessRows,
   terminalRows,
   type ValidationIssue,
 } from './inspection';
@@ -19,10 +20,13 @@ export default function InspectionPanel({
   onSelectIssue,
   onSelectWire,
 }: Props) {
-  const [tab, setTab] = useState<'validation' | 'table'>('validation');
+  const [tab, setTab] = useState<'validation' | 'table' | 'harness'>(
+    'validation',
+  );
   const [query, setQuery] = useState('');
   const issues = useMemo(() => inspectProject(project), [project]);
   const rows = useMemo(() => terminalRows(project), [project]);
+  const harnessDetails = useMemo(() => harnessRows(project), [project]);
   const filtered = rows.filter((row) =>
     [
       row.device,
@@ -34,6 +38,12 @@ export default function InspectionPanel({
       row.harnessNumber,
       row.conductor,
     ]
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(query.trim().toLocaleLowerCase()),
+  );
+  const filteredHarness = harnessDetails.filter((row) =>
+    Object.values(row)
       .join(' ')
       .toLocaleLowerCase()
       .includes(query.trim().toLocaleLowerCase()),
@@ -70,7 +80,14 @@ export default function InspectionPanel({
         >
           端子接线表 ({rows.length})
         </button>
-        {tab === 'table' && (
+        <button
+          type="button"
+          aria-pressed={tab === 'harness'}
+          onClick={() => setTab('harness')}
+        >
+          线束明细表 ({harnessDetails.length})
+        </button>
+        {(tab === 'table' || tab === 'harness') && (
           <div className="inspection-tools">
             <input
               aria-label="筛选接线表"
@@ -78,9 +95,11 @@ export default function InspectionPanel({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            <button type="button" onClick={exportCsv}>
-              导出 CSV
-            </button>
+            {tab === 'table' && (
+              <button type="button" onClick={exportCsv}>
+                导出 CSV
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -106,6 +125,54 @@ export default function InspectionPanel({
               ))}
             </ul>
           )
+        ) : tab === 'harness' ? (
+          <div className="terminal-table-wrap">
+            <table className="terminal-table">
+              <thead>
+                <tr>
+                  {[
+                    '线束编号',
+                    '模板',
+                    '芯线',
+                    '源设备/端子',
+                    '目标设备/端子',
+                    '状态',
+                    '备注',
+                  ].map((item) => (
+                    <th key={item}>{item}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredHarness.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.number}</td>
+                    <td>{row.template}</td>
+                    <td>
+                      {row.wireId ? (
+                        <button
+                          type="button"
+                          className="table-link"
+                          onClick={() => onSelectWire(row.wireId!)}
+                        >
+                          {row.conductor}
+                        </button>
+                      ) : (
+                        row.conductor
+                      )}
+                    </td>
+                    <td>{row.source}</td>
+                    <td>{row.target}</td>
+                    <td>{row.status}</td>
+                    <td>{row.note || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!filteredHarness.length && (
+              <p className="empty-hint">没有匹配的线束记录</p>
+            )}
+          </div>
         ) : (
           <div className="terminal-table-wrap">
             <table className="terminal-table">

@@ -2,11 +2,13 @@ import { useState, type DragEvent } from 'react';
 import type {
   DeviceTemplate,
   ElectricalRole,
+  ImageAsset,
   Side,
   TerminalDefinition,
   TerminalType,
 } from '../model/project';
 import { createTerminal, reorderTerminals, SIDE_LABELS, SIDES } from './device';
+import { readImageAsset } from './assets';
 
 const roles: { value: ElectricalRole; label: string }[] = [
   { value: 'passive', label: '无特定角色' },
@@ -147,17 +149,44 @@ export function TypeEditor({
 interface TemplateEditorProps {
   initial: DeviceTemplate;
   terminalTypes: TerminalType[];
-  onSave(template: DeviceTemplate): void;
+  assets: ImageAsset[];
+  onSave(template: DeviceTemplate, asset?: ImageAsset): void;
   onClose(): void;
 }
 
 export function TemplateEditor({
   initial,
   terminalTypes,
+  assets,
   onSave,
   onClose,
 }: TemplateEditorProps) {
   const [draft, setDraft] = useState(initial);
+  const [pendingAsset, setPendingAsset] = useState<ImageAsset | null>(null);
+  const [imageError, setImageError] = useState('');
+  const imageAsset =
+    pendingAsset?.id === draft.appearance.assetId
+      ? pendingAsset
+      : assets.find((asset) => asset.id === draft.appearance.assetId);
+
+  async function uploadImage(file?: File) {
+    if (!file) return;
+    setImageError('');
+    try {
+      const asset = await readImageAsset(file);
+      setPendingAsset(asset);
+      setDraft((current) => ({
+        ...current,
+        appearance: {
+          kind: 'image',
+          assetId: asset.id,
+          imageFit: current.appearance.imageFit ?? 'contain',
+        },
+      }));
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : '图片上传失败');
+    }
+  }
 
   function updateTerminal(id: string, patch: Partial<TerminalDefinition>) {
     setDraft((current) => ({
@@ -285,6 +314,56 @@ export function TemplateEditor({
             />
           </label>
         </div>
+        <fieldset className="image-editor">
+          <legend>设备图片（可选）</legend>
+          <label>
+            上传 PNG、JPG 或 WebP（不超过 5 MB）
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(event) => void uploadImage(event.target.files?.[0])}
+            />
+          </label>
+          {imageError && (
+            <p role="alert" className="status-error">
+              {imageError}
+            </p>
+          )}
+          {draft.appearance.kind === 'image' && imageAsset ? (
+            <div className="image-preview-row">
+              <img src={imageAsset.data} alt="设备图片预览" />
+              <label>
+                显示方式
+                <select
+                  value={draft.appearance.imageFit ?? 'contain'}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      appearance: {
+                        ...draft.appearance,
+                        imageFit: event.target.value as 'contain' | 'cover',
+                      },
+                    })
+                  }
+                >
+                  <option value="contain">完整显示</option>
+                  <option value="cover">填满区域</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft({ ...draft, appearance: { kind: 'default' } });
+                  setPendingAsset(null);
+                }}
+              >
+                移除图片
+              </button>
+            </div>
+          ) : draft.appearance.kind === 'image' ? (
+            <p className="hint">图片资产缺失，保存后将显示默认外观。</p>
+          ) : null}
+        </fieldset>
         <p className="hint">
           四边端子按顺序均匀排列。可拖动端子行调整顺序；实例会保存模板快照。
         </p>
@@ -448,14 +527,21 @@ export function TemplateEditor({
               )
             }
             onClick={() =>
-              onSave({
-                ...draft,
-                name: draft.name.trim(),
-                terminals: draft.terminals.map((terminal) => ({
-                  ...terminal,
-                  label: terminal.label.trim(),
-                })),
-              })
+              onSave(
+                {
+                  ...draft,
+                  name: draft.name.trim(),
+                  appearance:
+                    draft.appearance.kind === 'image' && !imageAsset
+                      ? { kind: 'default' }
+                      : draft.appearance,
+                  terminals: draft.terminals.map((terminal) => ({
+                    ...terminal,
+                    label: terminal.label.trim(),
+                  })),
+                },
+                pendingAsset ?? undefined,
+              )
             }
           >
             保存模板

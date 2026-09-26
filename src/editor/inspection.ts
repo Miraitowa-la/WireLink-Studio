@@ -21,6 +21,57 @@ export interface TerminalRow {
   wireId: string;
 }
 
+export interface HarnessRow {
+  id: string;
+  harnessId: string;
+  number: string;
+  template: string;
+  conductor: string;
+  source: string;
+  target: string;
+  status: string;
+  note: string;
+  wireId?: string;
+}
+
+export function harnessRows(project: Project): HarnessRow[] {
+  return project.harnesses.flatMap((harness) =>
+    harness.templateSnapshot.conductors.map((conductor) => {
+      const wire = project.wires.find(
+        (item) =>
+          item.harnessId === harness.id && item.conductorId === conductor.id,
+      );
+      const source = wire && endpointInfo(project, wire.source);
+      const target = wire && endpointInfo(project, wire.target);
+      return {
+        id: `${harness.id}:${conductor.id}`,
+        harnessId: harness.id,
+        number: harness.number || harness.name,
+        template: harness.templateSnapshot.name,
+        conductor: conductor.name,
+        source: source
+          ? `${source.device?.name ?? '未知设备'} / ${source.terminal?.label ?? '未知端子'}`
+          : '—',
+        target: target
+          ? `${target.device?.name ?? '未知设备'} / ${target.terminal?.label ?? '未知端子'}`
+          : '—',
+        status: !wire
+          ? conductor.required
+            ? '缺失'
+            : '未连接'
+          : source?.terminal &&
+              target?.terminal &&
+              source.terminal.typeId === conductor.terminalTypeId &&
+              target.terminal.typeId === conductor.terminalTypeId
+            ? '正常'
+            : '类型不匹配',
+        note: wire?.note || harness.note || '',
+        wireId: wire?.id,
+      };
+    }),
+  );
+}
+
 function endpointKey(endpoint: WireEndpoint): string {
   return `${endpoint.deviceId}\0${endpoint.terminalId}`;
 }
