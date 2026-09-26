@@ -976,22 +976,49 @@ export default function App() {
               <div className="section-heading">
                 <h3>画布线束</h3>
               </div>
-              {project.harnesses.map((harness) => (
-                <button
-                  key={harness.id}
-                  type="button"
-                  className="table-link"
-                  onClick={() => {
-                    setSelectedId(null);
-                    setSelectedWireId(null);
-                    setSelectedHarnessId(harness.id);
-                    setFocusTarget(null);
-                  }}
-                >
-                  {harness.number || harness.name} ·{' '}
-                  {harness.collapsed ? '已折叠' : '已展开'}
-                </button>
-              ))}
+              <div className="canvas-harness-list">
+                {project.harnesses.map((harness) => (
+                  <button
+                    key={harness.id}
+                    type="button"
+                    className={`canvas-harness-item${selectedHarnessId === harness.id ? ' is-selected' : ''}`}
+                    aria-current={
+                      selectedHarnessId === harness.id ? 'true' : undefined
+                    }
+                    title={`${harness.number || harness.name} · ${harness.collapsed ? '已折叠' : '已展开'}`}
+                    onClick={() => {
+                      setSelectedId(null);
+                      setSelectedWireId(null);
+                      setSelectedHarnessId(harness.id);
+                      setFocusTarget(null);
+                    }}
+                  >
+                    <span
+                      className="color-dot"
+                      style={{
+                        backgroundColor: harness.templateSnapshot.color,
+                      }}
+                    />
+                    <span className="canvas-harness-copy">
+                      <strong>{harness.number || harness.name}</strong>
+                      <small>
+                        {harness.number && harness.name !== harness.number
+                          ? `${harness.name} · `
+                          : ''}
+                        {
+                          project.wires.filter(
+                            (wire) => wire.harnessId === harness.id,
+                          ).length
+                        }{' '}
+                        芯
+                      </small>
+                    </span>
+                    <span className="canvas-harness-state">
+                      {harness.collapsed ? '已折叠' : '已展开'}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </section>
           )}
         </aside>
