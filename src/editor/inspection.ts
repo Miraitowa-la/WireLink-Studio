@@ -25,7 +25,6 @@ export interface HarnessRow {
   id: string;
   harnessId: string;
   number: string;
-  template: string;
   conductor: string;
   source: string;
   target: string;
@@ -36,39 +35,23 @@ export interface HarnessRow {
 
 export function harnessRows(project: Project): HarnessRow[] {
   return project.harnesses.flatMap((harness) =>
-    harness.templateSnapshot.conductors.map((conductor) => {
-      const wire = project.wires.find(
-        (item) =>
-          item.harnessId === harness.id && item.conductorId === conductor.id,
-      );
-      const source = wire && endpointInfo(project, wire.source);
-      const target = wire && endpointInfo(project, wire.target);
-      return {
-        id: `${harness.id}:${conductor.id}`,
-        harnessId: harness.id,
-        number: harness.number || harness.name,
-        template: harness.templateSnapshot.name,
-        conductor: conductor.name,
-        source: source
-          ? `${source.device?.name ?? '未知设备'} / ${source.terminal?.label ?? '未知端子'}`
-          : '—',
-        target: target
-          ? `${target.device?.name ?? '未知设备'} / ${target.terminal?.label ?? '未知端子'}`
-          : '—',
-        status: !wire
-          ? conductor.required
-            ? '缺失'
-            : '未连接'
-          : source?.terminal &&
-              target?.terminal &&
-              source.terminal.typeId === conductor.terminalTypeId &&
-              target.terminal.typeId === conductor.terminalTypeId
-            ? '正常'
-            : '类型不匹配',
-        note: wire?.note || harness.note || '',
-        wireId: wire?.id,
-      };
-    }),
+    project.wires
+      .filter((wire) => wire.harnessId === harness.id)
+      .map((wire) => {
+        const source = endpointInfo(project, wire.source);
+        const target = endpointInfo(project, wire.target);
+        return {
+          id: wire.id,
+          harnessId: harness.id,
+          number: harness.number || harness.name,
+          conductor: wire.name || wire.number || '未命名导线',
+          source: `${source.device?.name ?? '未知设备'} / ${source.terminal?.label ?? '未知端子'}`,
+          target: `${target.device?.name ?? '未知设备'} / ${target.terminal?.label ?? '未知端子'}`,
+          status: source.terminal && target.terminal ? '正常' : '端子缺失',
+          note: wire.note || harness.note || '',
+          wireId: wire.id,
+        };
+      }),
   );
 }
 
@@ -92,9 +75,6 @@ export function terminalRows(project: Project): TerminalRow[] {
     const harness = project.harnesses.find(
       (item) => item.id === wire.harnessId,
     );
-    const conductor = harness?.templateSnapshot.conductors.find(
-      (item) => item.id === wire.conductorId,
-    );
     return ([wire.source, wire.target] as const).map((endpoint, index) => {
       const own = endpointInfo(project, endpoint);
       const other = endpointInfo(
@@ -110,7 +90,7 @@ export function terminalRows(project: Project): TerminalRow[] {
         connectedTo: `${other.device?.name ?? (index === 0 ? wire.target.deviceId : wire.source.deviceId)} / ${other.terminal?.label ?? (index === 0 ? wire.target.terminalId : wire.source.terminalId)}`,
         number: wire.number ?? '',
         harnessNumber: harness?.number ?? '',
-        conductor: conductor?.name ?? '',
+        conductor: wire.name ?? '',
         wireId: wire.id,
       };
     });
@@ -237,54 +217,52 @@ export function inspectProject(project: Project): ValidationIssue[] {
     const mapped = project.wires.filter(
       (wire) => wire.harnessId === harness.id,
     );
-    for (const conductor of harness.templateSnapshot.conductors) {
-      const matches = mapped.filter(
-        (wire) => wire.conductorId === conductor.id,
+    if (mapped.length < 2)
+      add(
+        'error',
+        `${harness.id}:count`,
+        `线束“${harness.name}”少于两根芯线`,
+        mapped[0]?.id,
       );
-      if (conductor.required && matches.length === 0)
-        add(
-          'error',
-          `${harness.id}:${conductor.id}:missing`,
-          `线束“${harness.name}”缺少必需芯线“${conductor.name}”`,
-          mapped[0]?.id,
-        );
-      if (matches.length > 1)
-        add(
-          'error',
-          `${harness.id}:${conductor.id}:duplicate`,
-          `线束“${harness.name}”芯线“${conductor.name}”被重复映射`,
-          matches[1].id,
-        );
-      for (const wire of matches) {
-        const source = endpointInfo(project, wire.source).terminal;
-        const target = endpointInfo(project, wire.target).terminal;
-        if (
-          source &&
-          target &&
-          (source.typeId !== conductor.terminalTypeId ||
-            target.typeId !== conductor.terminalTypeId)
-        )
-          add(
-            'error',
-            `${wire.id}:conductor-type`,
-            `芯线“${conductor.name}”端子类型不匹配`,
-            wire.id,
-          );
-      }
-    }
-    for (const wire of mapped) {
-      if (
-        !harness.templateSnapshot.conductors.some(
-          (item) => item.id === wire.conductorId,
-        )
+    const pair =
+      mapped[0] &&
+      [mapped[0].source.deviceId, mapped[0].target.deviceId].sort().join('\0');
+    if (
+      mapped.some(
+        (wire) =>
+          [wire.source.deviceId, wire.target.deviceId].sort().join('\0') !==
+          pair,
       )
-        add(
-          'error',
-          `${wire.id}:conductor`,
-          `导线引用不存在的线束芯线：${wire.conductorId ?? '未指定'}`,
-          wire.id,
-        );
-    }
+    )
+      add(
+        'error',
+        `${harness.id}:devices`,
+        `线束“${harness.name}”的芯线未连接同一对设备`,
+        mapped[0]?.id,
+      );
+    if (harness.collapsed && !harness.route)
+      add(
+        'error',
+        `${harness.id}:route`,
+        `线束“${harness.name}”缺少走线路径`,
+        mapped[0]?.id,
+      );
+    if (
+      harness.route &&
+      (harness.route.branches.length !== mapped.length ||
+        mapped.some(
+          (wire) =>
+            !harness.route?.branches.some(
+              (branch) => branch.wireId === wire.id,
+            ),
+        ))
+    )
+      add(
+        'error',
+        `${harness.id}:branches`,
+        `线束“${harness.name}”的分支与芯线不一致`,
+        mapped[0]?.id,
+      );
   }
   return issues;
 }

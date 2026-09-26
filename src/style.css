@@ -495,6 +495,11 @@ p {
   overflow: visible;
   pointer-events: none;
 }
+.wire-route-preview circle {
+  fill: #1764b1;
+  stroke: #fff;
+  stroke-width: 2;
+}
 .wire-route-preview path {
   fill: none;
   stroke: #1764b1;

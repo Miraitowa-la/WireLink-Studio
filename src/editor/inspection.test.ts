@@ -101,39 +101,17 @@ test('reports imported wiring faults and derives both terminal rows from each wi
       name: 'SPI',
       number: 'H1',
       collapsed: true,
-      templateSnapshot: {
-        id: 'ht',
-        name: 'SPI',
-        color: '#123456',
-        conductors: [
-          {
-            id: 'clk',
-            name: 'CLK',
-            terminalTypeId: 'signal',
-            required: true,
-            order: 0,
-          },
-          {
-            id: 'data',
-            name: 'DATA',
-            terminalTypeId: 'signal',
-            required: true,
-            order: 1,
-          },
-        ],
-      },
+      color: '#123456',
     },
   ];
   for (const wire of project.wires) {
     wire.harnessId = 'h';
-    wire.conductorId = 'clk';
+    wire.name = 'CLK';
   }
   const harnessMessages = inspectProject(project)
     .map((issue) => issue.message)
     .join(' ');
-  expect(harnessMessages).toContain('缺少必需芯线');
-  expect(harnessMessages).toContain('重复映射');
-  expect(harnessMessages).toContain('芯线“CLK”端子类型不匹配');
+  expect(harnessMessages).not.toContain('少于两根芯线');
   expect(terminalRows(project)[0]).toMatchObject({
     harnessNumber: 'H1',
     conductor: 'CLK',

@@ -131,7 +131,19 @@ export function renderDiagramSvg(
   ]);
   for (const point of [
     ...project.wires.flatMap((wire) => wire.routePoints ?? []),
-    ...project.harnesses.flatMap((harness) => harness.routePoints ?? []),
+    ...project.harnesses.flatMap((harness) =>
+      harness.route
+        ? [
+            harness.route.sourceJunction,
+            harness.route.targetJunction,
+            ...harness.route.trunkPoints,
+            ...harness.route.branches.flatMap((branch) => [
+              ...branch.sourcePoints,
+              ...branch.targetPoints,
+            ]),
+          ]
+        : [],
+    ),
   ]) {
     xValues.push(point.x);
     yValues.push(point.y);
@@ -179,11 +191,19 @@ export function renderDiagramSvg(
         project.viewPreferences?.showLabels === false
           ? ''
           : `<g class="edge-label"><rect x="${n(geometry.label.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(geometry.label.y - 10)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(geometry.label.x)}" y="${n(geometry.label.y + 4)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
-      const color = escapeXml(harness.templateSnapshot.color);
+      const color = escapeXml(harness.color);
       const visibility = includeHiddenHarnessViews
         ? ` data-harness-id="${escapeXml(harness.id)}" data-view="collapsed"${harness.collapsed ? '' : ' style="display:none"'}`
         : '';
-      return `<g class="diagram-object" data-kind="harness" data-id="${escapeXml(harness.id)}"${visibility}><title>${text(label)}</title><path d="${geometry.branches}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.trunk}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.branches} ${geometry.trunk}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit"/>${labelMarkup}</g>`;
+      return `<g class="diagram-object" data-kind="harness" data-id="${escapeXml(harness.id)}"${visibility}><title>${text(label)}</title>${geometry.paths
+        .slice(1)
+        .map(
+          (part) =>
+            `<path d="${part.path}" fill="none" stroke="${escapeXml(part.color)}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+        )
+        .join(
+          '',
+        )}<path d="${geometry.trunk}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.branches} ${geometry.trunk}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit"/>${labelMarkup}</g>`;
     })
     .join('');
   const devices = project.devices
@@ -194,7 +214,7 @@ export function renderDiagramSvg(
 }
 
 export function renderPrintPages(project: Project): string {
-  const views = project.harnesses.length
+  const views = project.harnesses.some((harness) => !!harness.route)
     ? [
         { title: '线束总览（折叠）', collapsed: true },
         { title: '芯线明细（展开）', collapsed: false },
@@ -206,7 +226,7 @@ export function renderPrintPages(project: Project): string {
         ...project,
         harnesses: project.harnesses.map((harness) => ({
           ...harness,
-          collapsed,
+          collapsed: collapsed && !!harness.route,
         })),
       };
       return `<section class="print-page">${title ? `<h2>${title}</h2>` : ''}${renderDiagramSvg(snapshot).svg}</section>`;
@@ -233,7 +253,7 @@ export function renderViewerHtml(project: Project): string {
   const harnesses = project.harnesses
     .map(
       (harness) =>
-        `<div class="harness-item">${item('harness', harness.id, `${harness.number || harness.name} · ${project.wires.filter((wire) => wire.harnessId === harness.id).length} 芯`)}<button type="button" class="harness-toggle" data-harness-id="${escapeXml(harness.id)}" data-collapsed="${harness.collapsed}" aria-expanded="${!harness.collapsed}">${harness.collapsed ? '展开芯线' : '折叠线束'}</button></div>`,
+        `<div class="harness-item">${harness.route ? item('harness', harness.id, `${harness.number || harness.name} · ${project.wires.filter((wire) => wire.harnessId === harness.id).length} 芯`) : `<span>${escapeXml(harness.number || harness.name)} · 待走线</span>`}${harness.route ? `<button type="button" class="harness-toggle" data-harness-id="${escapeXml(harness.id)}" data-collapsed="${harness.collapsed}" aria-expanded="${!harness.collapsed}">${harness.collapsed ? '展开芯线' : '折叠线束'}</button>` : ''}</div>`,
     )
     .join('');
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeXml(project.name)} · WireLink 图纸</title><style>

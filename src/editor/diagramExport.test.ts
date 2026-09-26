@@ -99,13 +99,19 @@ function example() {
       name: 'SPI',
       number: 'SPI-1',
       collapsed: true,
-      templateSnapshot: {
-        id: 'spi',
-        name: 'SPI-4',
-        color: '#7c3aed',
-        conductors,
+      color: '#7c3aed',
+      route: {
+        sourceDeviceId: 'source',
+        targetDeviceId: 'target',
+        sourceJunction: { x: 170, y: 150 },
+        targetJunction: { x: 370, y: 150 },
+        trunkPoints: [{ x: 270, y: 120 }],
+        branches: conductors.map((conductor) => ({
+          wireId: `wire-${conductor.id}`,
+          sourcePoints: [],
+          targetPoints: [],
+        })),
       },
-      routePoints: [{ x: 260, y: 130 }],
     },
   ];
   project.wires = conductors.map((conductor) => ({
@@ -114,7 +120,6 @@ function example() {
     source: { deviceId: 'source', terminalId: conductor.id },
     target: { deviceId: 'target', terminalId: conductor.id },
     harnessId: 'harness',
-    conductorId: conductor.id,
   }));
   return project;
 }
@@ -258,29 +263,11 @@ test('collapsed harness keeps every terminal connected, including mixed sides', 
   ).toHaveLength(1);
 });
 
-test('collapsed harness label sits on a long trunk and clears short gaps', () => {
+test('collapsed harness uses explicit route points', () => {
   const project = example();
-  project.harnesses[0].routePoints = [];
-  const wide = collapsedHarnessGeometry(project, 'harness')!;
-  expect(wide.label.y).toBe(150);
-  project.devices[1].position.x = 170;
-  const narrow = collapsedHarnessGeometry(project, 'harness')!;
-  expect(narrow.label.y).toBeLessThan(project.devices[0].position.y);
-});
-
-test('collapsed harness junctions and bends sit on grid points', () => {
-  const project = example();
-  project.devices[0].position = { x: -90, y: 30 };
-  project.devices[1].position = { x: 390, y: 30 };
-  project.wires[1].source.terminalId = 'top';
-  project.wires[1].target.terminalId = 'bottom';
-  project.harnesses[0].routePoints = [{ x: 271, y: 137 }];
+  const route = project.harnesses[0].route!;
+  route.trunkPoints = [{ x: 270, y: 150 }];
   const geometry = collapsedHarnessGeometry(project, 'harness')!;
-  for (const coordinate of `${geometry.branches} ${geometry.trunk}`.matchAll(
-    /[ML](-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g,
-  )) {
-    expect(Number(coordinate[1]) % 30).toBe(0);
-    expect(Number(coordinate[2]) % 30).toBe(0);
-  }
   expect(geometry.trunk).toContain('L270 150');
+  expect(geometry.paths).toHaveLength(9);
 });

@@ -17,12 +17,13 @@ import {
   snapSizeToGrid,
 } from './editor/device';
 import { TemplateEditor, TypeEditor } from './editor/LibraryEditors';
-import { HarnessTemplateEditor, HarnessWizard } from './editor/HarnessEditors';
+import { HarnessCreateDialog } from './editor/HarnessEditors';
 import {
-  createHarnessConnection,
-  createHarnessTemplate,
-  installHarnessPresets,
-  type ConductorMapping,
+  createHarnessFromWires,
+  removeWire,
+  routeHarness,
+  selectedHarnessWires,
+  ungroupHarness,
 } from './editor/harness';
 import { pruneAssets } from './editor/assets';
 import {
@@ -40,8 +41,8 @@ import {
   type DeviceInstance,
   type DeviceTemplate,
   type ImageAsset,
-  type HarnessTemplate,
   type HarnessConnection,
+  type HarnessRoute,
   type Project,
   type TerminalType,
   type Wire,
@@ -51,8 +52,7 @@ import {
 type Editor =
   | { kind: 'type'; value: TerminalType }
   | { kind: 'template'; value: DeviceTemplate }
-  | { kind: 'harness-template'; value: HarnessTemplate }
-  | { kind: 'harness-wizard' };
+  | { kind: 'harness-create'; wireIds: string[] };
 type Status = { kind: 'info' | 'error'; text: string } | null;
 
 export default function App() {
@@ -64,6 +64,7 @@ export default function App() {
   const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(
     null,
   );
+  const [routingHarnessId, setRoutingHarnessId] = useState<string | null>(null);
   const [focusTarget, setFocusTarget] = useState<{
     kind: 'device' | 'wire';
     id: string;
@@ -123,6 +124,7 @@ export default function App() {
       } else if (
         !editing &&
         project &&
+        !routingHarnessId &&
         (event.key === 'Delete' || event.key === 'Backspace')
       ) {
         if (selectedHarnessId || selectedWireId || selectedId) {
@@ -355,46 +357,46 @@ export default function App() {
     setEditor(null);
   }
 
-  function saveHarnessTemplate(value: HarnessTemplate) {
-    changeProject((current) => ({
-      ...current,
-      harnessLibrary: upsert(current.harnessLibrary, value),
-    }));
-    setEditor(null);
+  function startHarnessCreation(wireIds: string[]) {
+    const current = projectRef.current;
+    if (!current) return;
+    try {
+      selectedHarnessWires(current, wireIds);
+      setEditor({ kind: 'harness-create', wireIds });
+    } catch (error) {
+      setStatus({ kind: 'error', text: errorMessage(error) });
+    }
   }
 
   function createHarness(
-    template: HarnessTemplate,
-    sourceId: string,
-    targetId: string,
-    mappings: ConductorMapping[],
-    details: {
-      name: string;
-      number: string;
-      note: string;
-      cableModel: string;
-      shielded: boolean;
-    },
-  ) {
+    details: Pick<
+      HarnessConnection,
+      'name' | 'number' | 'color' | 'note' | 'cableModel' | 'shielded'
+    >,
+  ): string | null {
     const current = projectRef.current;
-    if (!current) return '工程不存在';
+    if (!current || editor?.kind !== 'harness-create') return '未选择导线';
     try {
-      const next = createHarnessConnection(
-        current,
-        template,
-        sourceId,
-        targetId,
-        mappings,
-        details,
-      );
+      const next = createHarnessFromWires(current, editor.wireIds, details);
+      const id = next.harnesses.at(-1)!.id;
       changeProject(() => next);
       setEditor(null);
       setSelectedId(null);
       setSelectedWireId(null);
-      setSelectedHarnessId(next.harnesses.at(-1)!.id);
+      setSelectedHarnessId(id);
+      setRoutingHarnessId(id);
       return null;
     } catch (error) {
       return errorMessage(error);
+    }
+  }
+
+  function finishHarnessRoute(id: string, route: HarnessRoute) {
+    try {
+      changeProject((current) => routeHarness(current, id, route));
+      setRoutingHarnessId(null);
+    } catch (error) {
+      setStatus({ kind: 'error', text: errorMessage(error) });
     }
   }
 
@@ -408,16 +410,13 @@ export default function App() {
   }
 
   function deleteSelectedHarness() {
-    if (!selectedHarnessId || !window.confirm('删除该线束及所有芯线？')) return;
-    changeProject((current) => ({
-      ...current,
-      harnesses: current.harnesses.filter(
-        (item) => item.id !== selectedHarnessId,
-      ),
-      wires: current.wires.filter(
-        (item) => item.harnessId !== selectedHarnessId,
-      ),
-    }));
+    if (
+      !selectedHarnessId ||
+      !window.confirm('解除该线束分组？原有导线将保留。')
+    )
+      return;
+    changeProject((current) => ungroupHarness(current, selectedHarnessId));
+    setRoutingHarnessId(null);
     setSelectedHarnessId(null);
   }
 
@@ -431,21 +430,11 @@ export default function App() {
         device.templateSnapshot.terminals.some(
           (terminal) => terminal.typeId === type.id,
         ),
-      ) ||
-      project.harnessLibrary.some((template) =>
-        template.conductors.some(
-          (conductor) => conductor.terminalTypeId === type.id,
-        ),
-      ) ||
-      project.harnesses.some((harness) =>
-        harness.templateSnapshot.conductors.some(
-          (conductor) => conductor.terminalTypeId === type.id,
-        ),
       );
     if (referenced) {
       setStatus({
         kind: 'error',
-        text: `端子类型“${type.name}”仍被设备或线束引用，不能删除`,
+        text: `端子类型“${type.name}”仍被设备引用，不能删除`,
       });
       return;
     }
@@ -604,10 +593,7 @@ export default function App() {
 
   function deleteWire(id: string) {
     if (!window.confirm('删除这条导线？')) return;
-    changeProject((current) => ({
-      ...current,
-      wires: current.wires.filter((wire) => wire.id !== id),
-    }));
+    changeProject((current) => removeWire(current, id));
     setSelectedWireId(null);
   }
 
@@ -806,7 +792,7 @@ export default function App() {
         <aside className="sidebar" aria-label="资料库">
           <div className="sidebar-heading">
             <h2>资料库</h2>
-            <p>端子、设备与线束模板</p>
+            <p>端子类型与设备模板</p>
           </div>
           <section className="library-section">
             <div className="section-heading">
@@ -917,74 +903,6 @@ export default function App() {
               </div>
             ))}
           </section>
-          <section className="library-section">
-            <div className="section-heading">
-              <h3>线束模板</h3>
-              <button
-                type="button"
-                onClick={() =>
-                  setEditor({
-                    kind: 'harness-template',
-                    value: createHarnessTemplate(project.terminalTypes[0]?.id),
-                  })
-                }
-                disabled={!project.terminalTypes.length}
-              >
-                新增
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => changeProject(installHarnessPresets)}
-            >
-              添加 SPI-4 / RS485-2 预设
-            </button>
-            {project.harnessLibrary.map((template) => (
-              <div key={template.id} className="library-item">
-                <span
-                  className="color-dot"
-                  style={{ backgroundColor: template.color }}
-                />
-                <span className="library-item-name">
-                  {template.name} · {template.conductors.length} 芯
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditor({ kind: 'harness-template', value: template })
-                  }
-                >
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  className="danger-text"
-                  onClick={() => {
-                    if (
-                      project.harnesses.some(
-                        (item) => item.templateId === template.id,
-                      )
-                    ) {
-                      setStatus({
-                        kind: 'error',
-                        text: '该线束模板仍被线束引用',
-                      });
-                      return;
-                    }
-                    if (window.confirm(`删除线束模板“${template.name}”？`))
-                      changeProject((current) => ({
-                        ...current,
-                        harnessLibrary: current.harnessLibrary.filter(
-                          (item) => item.id !== template.id,
-                        ),
-                      }));
-                  }}
-                >
-                  删除
-                </button>
-              </div>
-            ))}
-          </section>
           {project.harnesses.length > 0 && (
             <section className="library-section">
               <div className="section-heading">
@@ -999,7 +917,7 @@ export default function App() {
                     aria-current={
                       selectedHarnessId === harness.id ? 'true' : undefined
                     }
-                    title={`${harness.number || harness.name} · ${harness.collapsed ? '已折叠' : '已展开'}`}
+                    title={`${harness.number || harness.name} · ${!harness.route ? '待走线' : harness.collapsed ? '已折叠' : '已展开'}`}
                     onClick={() => {
                       setSelectedId(null);
                       setSelectedWireId(null);
@@ -1010,7 +928,7 @@ export default function App() {
                     <span
                       className="color-dot"
                       style={{
-                        backgroundColor: harness.templateSnapshot.color,
+                        backgroundColor: harness.color,
                       }}
                     />
                     <span className="canvas-harness-copy">
@@ -1028,7 +946,11 @@ export default function App() {
                       </small>
                     </span>
                     <span className="canvas-harness-state">
-                      {harness.collapsed ? '已折叠' : '已展开'}
+                      {!harness.route
+                        ? '待走线'
+                        : harness.collapsed
+                          ? '已折叠'
+                          : '已展开'}
                     </span>
                   </button>
                 ))}
@@ -1044,22 +966,18 @@ export default function App() {
               {project.devices.length} 台设备 · {project.wires.length} 条导线 ·{' '}
               {project.harnesses.length} 个线束
             </span>
-            <button
-              type="button"
-              disabled={
-                project.devices.length < 2 ||
-                project.harnessLibrary.length === 0
-              }
-              onClick={() => setEditor({ kind: 'harness-wizard' })}
-            >
-              创建线束
-            </button>
+            <span className="hint">Ctrl + 点击导线多选，右键创建线束</span>
           </div>
           <DeviceCanvas
             project={project}
             selectedDeviceId={selectedId}
             selectedWireId={selectedWireId}
             selectedHarnessId={selectedHarnessId}
+            routingHarnessId={routingHarnessId}
+            onCreateHarness={startHarnessCreation}
+            onCompleteHarnessRoute={finishHarnessRoute}
+            onCancelHarnessRoute={() => setRoutingHarnessId(null)}
+            onUpdateHarnessRoute={(id, route) => updateHarness(id, { route })}
             focusTarget={focusTarget}
             onSelectDevice={(id) => {
               setSelectedId(id);
@@ -1073,12 +991,12 @@ export default function App() {
               setSelectedHarnessId(id);
               setFocusTarget(null);
             }}
-            onToggleHarness={(id) =>
-              updateHarness(id, {
-                collapsed: !project.harnesses.find((item) => item.id === id)
-                  ?.collapsed,
-              })
-            }
+            onToggleHarness={(id) => {
+              const harness = project.harnesses.find((item) => item.id === id);
+              if (harness?.route)
+                updateHarness(id, { collapsed: !harness.collapsed });
+              else setRoutingHarnessId(id);
+            }}
             onConnect={connectTerminals}
             onUpdateWireRoute={(id, routePoints) =>
               updateWire(id, { routePoints })
@@ -1107,7 +1025,7 @@ export default function App() {
           {selectedHarness ? (
             <div className="properties-body">
               <p className="hint">
-                {selectedHarness.templateSnapshot.name} ·{' '}
+                线束 ·{' '}
                 {
                   project.wires.filter(
                     (wire) => wire.harnessId === selectedHarness.id,
@@ -1172,23 +1090,42 @@ export default function App() {
                   }
                 />
               </label>
-              <RoutePointsInput
-                key={selectedHarness.id}
-                points={selectedHarness.routePoints}
-                onSave={(points) =>
-                  updateHarness(selectedHarness.id, { routePoints: points })
-                }
-              />
+              <label>
+                线束颜色
+                <input
+                  type="color"
+                  value={selectedHarness.color}
+                  onChange={(event) =>
+                    updateHarness(selectedHarness.id, {
+                      color: event.target.value,
+                    })
+                  }
+                />
+              </label>
               <button
                 type="button"
                 onClick={() =>
-                  updateHarness(selectedHarness.id, {
-                    collapsed: !selectedHarness.collapsed,
-                  })
+                  selectedHarness.route
+                    ? updateHarness(selectedHarness.id, {
+                        collapsed: !selectedHarness.collapsed,
+                      })
+                    : setRoutingHarnessId(selectedHarness.id)
                 }
               >
-                {selectedHarness.collapsed ? '展开芯线' : '折叠线束'}
+                {selectedHarness.route
+                  ? selectedHarness.collapsed
+                    ? '展开芯线'
+                    : '折叠线束'
+                  : '线束走线'}
               </button>
+              {selectedHarness.route && (
+                <button
+                  type="button"
+                  onClick={() => setRoutingHarnessId(selectedHarness.id)}
+                >
+                  重新走线
+                </button>
+              )}
               <h3>芯线</h3>
               {project.wires
                 .filter((wire) => wire.harnessId === selectedHarness.id)
@@ -1203,7 +1140,7 @@ export default function App() {
                       setSelectedWireId(wire.id);
                     }}
                   >
-                    {wire.name || wire.conductorId}
+                    {wire.name || wire.number || '未命名导线'}
                   </button>
                 ))}
               <button
@@ -1211,7 +1148,7 @@ export default function App() {
                 className="danger-text"
                 onClick={deleteSelectedHarness}
               >
-                删除线束
+                解除线束分组
               </button>
             </div>
           ) : selectedWire ? (
@@ -1454,18 +1391,10 @@ export default function App() {
           onClose={() => setEditor(null)}
         />
       )}
-      {editor?.kind === 'harness-template' && (
-        <HarnessTemplateEditor
-          key={editor.value.id}
-          initial={editor.value}
-          types={project.terminalTypes}
-          onSave={saveHarnessTemplate}
-          onClose={() => setEditor(null)}
-        />
-      )}
-      {editor?.kind === 'harness-wizard' && (
-        <HarnessWizard
+      {editor?.kind === 'harness-create' && (
+        <HarnessCreateDialog
           project={project}
+          wireIds={editor.wireIds}
           onCreate={createHarness}
           onClose={() => setEditor(null)}
         />
@@ -1487,60 +1416,4 @@ function upsert<T extends { id: string }>(items: T[], value: T): T[] {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '操作失败，请重试';
-}
-
-function RoutePointsInput({
-  points,
-  onSave,
-}: {
-  points?: { x: number; y: number }[];
-  onSave(points?: { x: number; y: number }[]): void;
-}) {
-  const [text, setText] = useState(
-    points?.map((point) => `${point.x},${point.y}`).join('; ') ?? '',
-  );
-  const [error, setError] = useState('');
-  useEffect(
-    () =>
-      setText(points?.map((point) => `${point.x},${point.y}`).join('; ') ?? ''),
-    [points],
-  );
-  function commit() {
-    const chunks = text.trim() ? text.split(/[;\n]+/) : [];
-    const parsed = chunks.map((chunk) =>
-      chunk.split(',').map((value) => value.trim()),
-    );
-    if (
-      parsed.some(
-        (pair) =>
-          pair.length !== 2 ||
-          pair.some((value) => !value || !Number.isFinite(Number(value))),
-      )
-    ) {
-      setError('路线点格式应为 x,y；多个点用分号分隔');
-      return;
-    }
-    setError('');
-    const next = parsed.length
-      ? parsed.map(([x, y]) => snapPointToGrid({ x: Number(x), y: Number(y) }))
-      : undefined;
-    if (JSON.stringify(next) !== JSON.stringify(points)) onSave(next);
-  }
-  return (
-    <label>
-      路线点（画布坐标，自动吸附到 30 单位网格）
-      <textarea
-        rows={2}
-        placeholder="例如 300,100; 300,260"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={commit}
-      />
-      {error && (
-        <span role="alert" className="status-error">
-          {error}
-        </span>
-      )}
-    </label>
-  );
 }

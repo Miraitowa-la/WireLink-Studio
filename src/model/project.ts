@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PROJECT_VERSION = 2 as const;
+export const PROJECT_VERSION = 3 as const;
 
 const id = z.string().min(1);
 const label = z.string().min(1);
@@ -90,41 +90,36 @@ export const wireSchema = z.looseObject({
   name: z.string().optional(),
   note: z.string().optional(),
   harnessId: id.optional(),
-  conductorId: id.optional(),
   routePoints: z.array(point).optional(),
 });
 export type Wire = z.infer<typeof wireSchema>;
 
-export const harnessConductorSchema = z.looseObject({
-  id,
-  name: label,
-  terminalTypeId: id,
-  color: z.string().optional(),
-  required: z.boolean(),
-  order: z.number().int().nonnegative(),
+export const harnessRouteSchema = z.looseObject({
+  sourceDeviceId: id,
+  targetDeviceId: id,
+  sourceJunction: point,
+  targetJunction: point,
+  trunkPoints: z.array(point),
+  branches: z.array(
+    z.looseObject({
+      wireId: id,
+      sourcePoints: z.array(point),
+      targetPoints: z.array(point),
+    }),
+  ),
 });
-export type HarnessConductor = z.infer<typeof harnessConductorSchema>;
-
-export const harnessTemplateSchema = z.looseObject({
-  id,
-  name: label,
-  description: z.string().optional(),
-  color: label,
-  conductors: z.array(harnessConductorSchema),
-});
-export type HarnessTemplate = z.infer<typeof harnessTemplateSchema>;
+export type HarnessRoute = z.infer<typeof harnessRouteSchema>;
 
 export const harnessConnectionSchema = z.looseObject({
   id,
-  templateId: id.optional(),
-  templateSnapshot: harnessTemplateSchema,
   number: z.string().optional(),
   name: label,
+  color: label,
   note: z.string().optional(),
   cableModel: z.string().optional(),
   shielded: z.boolean().optional(),
   collapsed: z.boolean(),
-  routePoints: z.array(point).optional(),
+  route: harnessRouteSchema.optional(),
 });
 export type HarnessConnection = z.infer<typeof harnessConnectionSchema>;
 
@@ -144,7 +139,6 @@ export const projectSchema = z.looseObject({
   harnesses: z.array(harnessConnectionSchema),
   deviceLibrary: z.array(deviceTemplateSchema),
   terminalTypes: z.array(terminalTypeSchema),
-  harnessLibrary: z.array(harnessTemplateSchema),
   assets: z.array(imageAssetSchema),
   viewPreferences: z
     .looseObject({
@@ -163,7 +157,6 @@ export function createEmptyProject(name = '未命名工程'): Project {
     harnesses: [],
     deviceLibrary: [],
     terminalTypes: [],
-    harnessLibrary: [],
     assets: [],
   };
 }
@@ -184,7 +177,6 @@ function assertProjectIds(project: Project): void {
   assertUniqueIds(project.harnesses, 'harnesses');
   assertUniqueIds(project.deviceLibrary, 'deviceLibrary');
   assertUniqueIds(project.terminalTypes, 'terminalTypes');
-  assertUniqueIds(project.harnessLibrary, 'harnessLibrary');
   assertUniqueIds(project.assets, 'assets');
 
   for (const template of project.deviceLibrary) {
@@ -199,17 +191,12 @@ function assertProjectIds(project: Project): void {
       `devices.${device.id}.terminals`,
     );
   }
-  for (const template of project.harnessLibrary) {
-    assertUniqueIds(
-      template.conductors,
-      `harnessLibrary.${template.id}.conductors`,
-    );
-  }
   for (const harness of project.harnesses) {
-    assertUniqueIds(
-      harness.templateSnapshot.conductors,
-      `harnesses.${harness.id}.conductors`,
-    );
+    if (harness.route)
+      assertUniqueIds(
+        harness.route.branches.map((branch) => ({ id: branch.wireId })),
+        `harnesses.${harness.id}.branches`,
+      );
   }
 }
 

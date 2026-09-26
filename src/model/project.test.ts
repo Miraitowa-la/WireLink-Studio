@@ -8,7 +8,7 @@ import {
 describe('project file model', () => {
   test('creates an empty versioned project', () => {
     expect(createEmptyProject('测试工程')).toMatchObject({
-      version: 2,
+      version: 3,
       name: '测试工程',
       devices: [],
       wires: [],
@@ -64,19 +64,14 @@ describe('project file model', () => {
         id: 'harness-1',
         name: 'SPI-1',
         collapsed: true,
-        templateSnapshot: {
-          id: 'spi-1',
-          name: 'SPI-1',
-          color: '#369',
-          conductors: [
-            {
-              id: 'mosi',
-              name: 'MOSI',
-              terminalTypeId: 'spi-mosi',
-              required: true,
-              order: 0,
-            },
-          ],
+        color: '#369',
+        route: {
+          sourceDeviceId: 'board-a',
+          targetDeviceId: 'board-b',
+          sourceJunction: { x: 210, y: 90 },
+          targetJunction: { x: 300, y: 90 },
+          trunkPoints: [],
+          branches: [{ wireId: 'wire-1', sourcePoints: [], targetPoints: [] }],
         },
       },
     ];
@@ -86,7 +81,6 @@ describe('project file model', () => {
         source: { deviceId: 'board-a', terminalId: 'mosi' },
         target: { deviceId: 'board-b', terminalId: 'mosi' },
         harnessId: 'harness-1',
-        conductorId: 'mosi',
       },
     ];
     project.assets = [

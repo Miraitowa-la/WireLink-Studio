@@ -132,7 +132,6 @@ export default function InspectionPanel({
                 <tr>
                   {[
                     '线束编号',
-                    '模板',
                     '芯线',
                     '源设备/端子',
                     '目标设备/端子',
@@ -147,7 +146,6 @@ export default function InspectionPanel({
                 {filteredHarness.map((row) => (
                   <tr key={row.id}>
                     <td>{row.number}</td>
-                    <td>{row.template}</td>
                     <td>
                       {row.wireId ? (
                         <button
