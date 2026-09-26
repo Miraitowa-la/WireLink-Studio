@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import App from './App';
 
 test('shows the project shell', () => {
@@ -34,4 +34,23 @@ test('undoes and redoes project edits', () => {
   fireEvent.click(screen.getByRole('button', { name: '撤销' }));
   fireEvent.change(name, { target: { value: '另一个方案' } });
   expect(screen.getByRole('button', { name: '重做' })).toBeDisabled();
+});
+
+test('offers export formats and prepares the print diagram', () => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+  render(<App />);
+  fireEvent.click(screen.getByRole('button', { name: '新建工程' }));
+  fireEvent.click(screen.getByText('导出'));
+  for (const label of [
+    '导出工程 JSON',
+    '导出 SVG 图纸',
+    '导出 PNG 图片',
+    '导出离线 HTML 查看页',
+  ]) {
+    expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+  }
+  fireEvent.click(screen.getByRole('button', { name: '打印图纸或保存为 PDF' }));
+  expect(print).toHaveBeenCalledOnce();
+  expect(document.querySelector('.print-sheet svg')).not.toBeNull();
+  print.mockRestore();
 });

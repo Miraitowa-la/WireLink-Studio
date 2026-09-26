@@ -227,6 +227,73 @@ p {
   gap: 7px;
   margin-left: auto;
 }
+.export-menu {
+  position: relative;
+}
+.export-menu summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 12px;
+  border: 1px solid #cad7e4;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+.export-menu summary::-webkit-details-marker {
+  display: none;
+}
+.export-options {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 5px);
+  z-index: 10;
+  width: 175px;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid #cad7e4;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px #17334f26;
+}
+.export-options button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+}
+.export-options button:hover {
+  background: #e6f1fc;
+}
+.print-sheet {
+  display: none;
+}
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+}
+@media print {
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .editor-shell {
+    display: block;
+    height: auto;
+    min-height: 0;
+  }
+  .editor-shell > :not(.print-sheet) {
+    display: none !important;
+  }
+  .print-sheet {
+    display: block;
+    width: 100%;
+  }
+  .print-sheet svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 180mm;
+  }
+}
 .workspace {
   display: grid;
   grid-template-columns: 286px minmax(300px, 1fr) 286px;

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { flushSync } from 'react-dom';
 import DeviceCanvas, { TEMPLATE_DRAG_TYPE } from './editor/DeviceCanvas';
+import { exportDiagram, renderDiagramSvg } from './editor/diagramExport';
 import InspectionPanel from './editor/InspectionPanel';
 import type { ValidationIssue } from './editor/inspection';
 import { addWire } from './editor/wire';
@@ -62,8 +64,10 @@ export default function App() {
   } | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [status, setStatus] = useState<Status>(null);
+  const [printSvg, setPrintSvg] = useState('');
   const fileHandle = useRef<ProjectFileHandle | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const exportMenu = useRef<HTMLDetailsElement | null>(null);
   const projectRef = useRef<Project | null>(null);
   const savedProject = useRef<Project | null>(null);
   const projectSession = useRef(0);
@@ -82,6 +86,12 @@ export default function App() {
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
+
+  useEffect(() => {
+    const clearPrint = () => setPrintSvg('');
+    window.addEventListener('afterprint', clearPrint);
+    return () => window.removeEventListener('afterprint', clearPrint);
+  }, []);
 
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -274,6 +284,31 @@ export default function App() {
         setStatus({ kind: 'error', text: errorMessage(error) });
     } finally {
       saving.current = false;
+    }
+  }
+
+  async function exportCurrent(format: 'json' | 'svg' | 'png' | 'html') {
+    exportMenu.current?.removeAttribute('open');
+    const snapshot = projectRef.current;
+    if (!snapshot) return;
+    try {
+      await exportDiagram(snapshot, format);
+      setStatus({ kind: 'info', text: `${format.toUpperCase()} 文件已导出` });
+    } catch (error) {
+      setStatus({ kind: 'error', text: errorMessage(error) });
+    }
+  }
+
+  function printCurrent() {
+    exportMenu.current?.removeAttribute('open');
+    const snapshot = projectRef.current;
+    if (!snapshot) return;
+    try {
+      flushSync(() => setPrintSvg(renderDiagramSvg(snapshot).svg));
+      window.print();
+      setStatus({ kind: 'info', text: '可在打印对话框中选择“保存为 PDF”' });
+    } catch (error) {
+      setStatus({ kind: 'error', text: errorMessage(error) });
     }
   }
 
@@ -677,6 +712,46 @@ export default function App() {
           <button type="button" className="primary" onClick={() => void save()}>
             保存
           </button>
+          <details className="export-menu" ref={exportMenu}>
+            <summary>导出</summary>
+            <div className="export-options">
+              <button
+                type="button"
+                aria-label="导出工程 JSON"
+                onClick={() => void exportCurrent('json')}
+              >
+                工程 JSON
+              </button>
+              <button
+                type="button"
+                aria-label="导出 SVG 图纸"
+                onClick={() => void exportCurrent('svg')}
+              >
+                SVG 图纸
+              </button>
+              <button
+                type="button"
+                aria-label="导出 PNG 图片"
+                onClick={() => void exportCurrent('png')}
+              >
+                PNG 图片
+              </button>
+              <button
+                type="button"
+                aria-label="导出离线 HTML 查看页"
+                onClick={() => void exportCurrent('html')}
+              >
+                离线 HTML 查看页
+              </button>
+              <button
+                type="button"
+                aria-label="打印图纸或保存为 PDF"
+                onClick={printCurrent}
+              >
+                打印 / PDF
+              </button>
+            </div>
+          </details>
         </nav>
       </header>
 
@@ -1286,6 +1361,11 @@ export default function App() {
           onClose={() => setEditor(null)}
         />
       )}
+      <div
+        className="print-sheet"
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: printSvg }}
+      />
     </main>
   );
 }
