@@ -200,9 +200,24 @@ export function collapsedHarnessGeometry(project: Project, harnessId: string) {
       ),
     ])
     .join(' ');
-  const label = {
-    x: axis === 'x' ? (sourceJunction.x + targetJunction.x) / 2 : cross,
-    y: Math.min(sourceBox.y, targetBox.y) - 24,
-  };
+  const longest = trunkPoints.slice(1).reduce(
+    (best, end, index) => {
+      const start = trunkPoints[index];
+      const length = Math.abs(end.x - start.x) + Math.abs(end.y - start.y);
+      return length > best.length ? { start, end, length } : best;
+    },
+    { start: sourceJunction, end: targetJunction, length: 0 },
+  );
+  const labelText = `${harness.number || harness.name} · ${wires.length} 芯`;
+  const label =
+    longest.length >= Math.min(220, labelText.length * 8.2 + 20) + 12
+      ? {
+          x: (longest.start.x + longest.end.x) / 2,
+          y: (longest.start.y + longest.end.y) / 2,
+        }
+      : {
+          x: axis === 'x' ? (sourceJunction.x + targetJunction.x) / 2 : cross,
+          y: Math.min(sourceBox.y, targetBox.y) - 24,
+        };
   return { trunk: path(trunkPoints), branches, label };
 }

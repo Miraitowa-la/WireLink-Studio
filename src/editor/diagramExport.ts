@@ -218,7 +218,7 @@ export function renderDiagramSvg(
       const labelMarkup =
         project.viewPreferences?.showLabels === false
           ? ''
-          : `<g class="edge-label"><rect x="${n(geometry.label.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(geometry.label.y - 24)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(geometry.label.x)}" y="${n(geometry.label.y - 10)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
+          : `<g class="edge-label"><rect x="${n(geometry.label.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(geometry.label.y - 10)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(geometry.label.x)}" y="${n(geometry.label.y + 4)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
       const color = escapeXml(harness.templateSnapshot.color);
       const visibility = includeHiddenHarnessViews
         ? ` data-harness-id="${escapeXml(harness.id)}" data-view="collapsed"${harness.collapsed ? '' : ' style="display:none"'}`
