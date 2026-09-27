@@ -18,6 +18,7 @@ import {
   TEMPLATE_DRAG_TYPE,
 } from './device';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
+import { finalizeHarnessPath } from './harness';
 import { insertionIndex, wirePath, type Point } from './wireGeometry';
 import {
   buildCanvasEdges,
@@ -90,6 +91,7 @@ function Canvas({
   const [harnessDraft, setHarnessDraft] = useState<HarnessDraft | null>(null);
   const [harnessDragging, setHarnessDragging] =
     useState<HarnessDragging | null>(null);
+  const completeHarnessDraftRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (!routingHarnessId) {
       setHarnessDraft(null);
@@ -102,10 +104,9 @@ function Canvas({
       route
         ? {
             source: route.sourceJunction,
-            target: route.targetJunction,
-            trunkPoints: route.trunkPoints,
+            points: [...route.trunkPoints, route.targetJunction],
           }
-        : { trunkPoints: [] },
+        : { points: [] },
     );
     setMultiWireIds([]);
   }, [routingHarnessId]);
@@ -135,19 +136,32 @@ function Canvas({
           event.target.isContentEditable)
       )
         return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          'button, a[href], summary, [role="button"], [role="menuitem"]',
+        ) &&
+        event.key !== 'Escape'
+      )
+        return;
       if (event.key === 'Escape') {
         setDraft(null);
         onCancelHarnessRoute();
-      } else if (routingHarnessId && event.key === 'Backspace')
+      } else if (
+        routingHarnessId &&
+        event.key === 'Enter' &&
+        event.target instanceof Node &&
+        wrap.current?.contains(event.target)
+      )
+        completeHarnessDraftRef.current();
+      else if (routingHarnessId && event.key === 'Backspace')
         setHarnessDraft((current) => {
           if (!current) return null;
-          if (current.trunkPoints.length)
-            return {
-              ...current,
-              trunkPoints: current.trunkPoints.slice(0, -1),
-            };
-          if (current.target) return { ...current, target: undefined };
-          return { ...current, source: undefined };
+          return {
+            ...current,
+            points: current.points.slice(0, -1),
+            cursor: undefined,
+          };
         });
       else if (event.key === 'Backspace')
         setDraft((current) =>
@@ -322,8 +336,11 @@ function Canvas({
   }
 
   function completeHarnessDraft() {
-    if (!routingHarnessId || !harnessDraft?.source || !harnessDraft.target)
-      return;
+    const path = finalizeHarnessPath(
+      harnessDraft?.source,
+      harnessDraft?.points ?? [],
+    );
+    if (!routingHarnessId || !path) return;
     const wires = project.wires.filter(
       (wire) => wire.harnessId === routingHarnessId,
     );
@@ -334,9 +351,7 @@ function Canvas({
     onCompleteHarnessRoute(routingHarnessId, {
       sourceDeviceId: original?.sourceDeviceId ?? wires[0].source.deviceId,
       targetDeviceId: original?.targetDeviceId ?? wires[0].target.deviceId,
-      sourceJunction: harnessDraft.source,
-      targetJunction: harnessDraft.target,
-      trunkPoints: harnessDraft.trunkPoints,
+      ...path,
       branches: wires.map(
         (wire) =>
           original?.branches.find((branch) => branch.wireId === wire.id) ?? {
@@ -347,6 +362,7 @@ function Canvas({
       ),
     });
   }
+  completeHarnessDraftRef.current = completeHarnessDraft;
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -366,6 +382,8 @@ function Canvas({
     <div
       ref={wrap}
       className="canvas-wrap"
+      tabIndex={0}
+      aria-label="接线画布快捷键区域"
       onDrop={onDrop}
       onDragOver={(event) => event.preventDefault()}
       onPointerMove={(event) => {
@@ -535,14 +553,16 @@ function Canvas({
         onPaneClick={(event) => {
           setMenu(null);
           if (routingHarnessId) {
+            wrap.current?.focus();
             const point = snapPointToGrid(
               screenToFlowPosition({ x: event.clientX, y: event.clientY }),
             );
             setHarnessDraft((current) => {
-              const next = current ?? { trunkPoints: [] };
+              const next = current ?? { points: [] };
               if (!next.source) return { ...next, source: point };
-              if (!next.target) return { ...next, target: point };
-              return { ...next, trunkPoints: [...next.trunkPoints, point] };
+              const last = next.points.at(-1) ?? next.source;
+              if (last.x === point.x && last.y === point.y) return next;
+              return { ...next, points: [...next.points, point] };
             });
             return;
           }
@@ -610,17 +630,8 @@ function Canvas({
       {routingHarnessId && (
         <div className="wire-route-hint">
           {!harnessDraft?.source
-            ? '点击网格设置起点汇合点'
-            : !harnessDraft.target
-              ? '点击网格设置终点汇合点'
-              : '继续点击可添加主干路径点；完成后可编辑各分支'}
-          <button
-            type="button"
-            disabled={!harnessDraft?.source || !harnessDraft.target}
-            onClick={completeHarnessDraft}
-          >
-            完成线束走线
-          </button>
+            ? '点击网格设置第一侧汇合点'
+            : '点击追加至少一个路径点 · Enter 将最后一点设为第二侧汇合点并完成 · Backspace 删除最后一点 · Esc 取消'}
           <button type="button" onClick={onCancelHarnessRoute}>
             取消
           </button>

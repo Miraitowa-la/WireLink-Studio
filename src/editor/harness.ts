@@ -4,6 +4,21 @@ import type {
   Project,
   Wire,
 } from '../model/project';
+import type { Point } from './wireGeometry';
+
+export function finalizeHarnessPath(
+  source: Point | undefined,
+  points: Point[],
+) {
+  const target = points.at(-1);
+  if (!source || !target || (source.x === target.x && source.y === target.y))
+    return null;
+  return {
+    sourceJunction: source,
+    targetJunction: target,
+    trunkPoints: points.slice(0, -1),
+  };
+}
 
 export function selectedHarnessWires(
   project: Project,

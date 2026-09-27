@@ -73,10 +73,73 @@ test('clears harness routing when replacing the project', async () => {
     fireEvent.click(await screen.findByTitle('测试线束 · 待走线'));
     fireEvent.click(screen.getByRole('button', { name: '线束走线' }));
     expect(
-      await screen.findByText('点击网格设置起点汇合点'),
+      await screen.findByText('点击网格设置第一侧汇合点'),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '新建' }));
-    expect(screen.queryByText('点击网格设置起点汇合点')).toBeNull();
+    expect(screen.queryByText('点击网格设置第一侧汇合点')).toBeNull();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test('finishes harness routing on Enter using the last temporary point', async () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const project = createEmptyProject('走线工程');
+  project.harnesses = [
+    { id: 'harness', name: '测试线束', color: '#7045e5', collapsed: false },
+  ];
+  project.wires = ['one', 'two'].map((id) => ({
+    id,
+    harnessId: 'harness',
+    source: { deviceId: 'left', terminalId: id },
+    target: { deviceId: 'right', terminalId: id },
+  }));
+  vi.stubGlobal('showOpenFilePicker', async () => [
+    {
+      name: 'routing.wlproj',
+      getFile: async () => ({ text: async () => JSON.stringify(project) }),
+    },
+  ]);
+  try {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '打开工程' }));
+    fireEvent.click(await screen.findByTitle('测试线束 · 待走线'));
+    fireEvent.click(screen.getByRole('button', { name: '线束走线' }));
+    const pane = document.querySelector('.react-flow__pane')!;
+    const canvas = screen.getByLabelText('接线画布快捷键区域');
+    fireEvent.keyDown(canvas, { key: 'Enter' });
+    expect(screen.getByText('点击网格设置第一侧汇合点')).toBeInTheDocument();
+    fireEvent.click(pane, { clientX: 90, clientY: 90 });
+    fireEvent.keyDown(canvas, { key: 'Enter' });
+    expect(screen.getByText(/点击追加至少一个路径点/)).toBeInTheDocument();
+    fireEvent.click(pane, { clientX: 180, clientY: 90 });
+    fireEvent.keyDown(canvas, { key: 'Backspace' });
+    fireEvent.keyDown(canvas, { key: 'Enter' });
+    expect(screen.getByText(/点击追加至少一个路径点/)).toBeInTheDocument();
+    fireEvent.click(pane, { clientX: 240, clientY: 120 });
+    const cancel = screen.getByRole('button', { name: '取消' });
+    cancel.focus();
+    fireEvent.keyDown(cancel, { key: 'Enter' });
+    expect(screen.getByText(/点击追加至少一个路径点/)).toBeInTheDocument();
+    expect(screen.getByTitle('测试线束 · 待走线')).toBeInTheDocument();
+    fireEvent.click(cancel);
+    expect(screen.queryByText(/点击追加至少一个路径点/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '线束走线' }));
+    fireEvent.click(pane, { clientX: 90, clientY: 90 });
+    fireEvent.click(pane, { clientX: 240, clientY: 120 });
+    fireEvent.keyDown(screen.getByRole('heading', { name: '资料库' }), {
+      key: 'Enter',
+    });
+    expect(screen.getByText(/点击追加至少一个路径点/)).toBeInTheDocument();
+    fireEvent.keyDown(canvas, { key: 'Enter' });
+    expect(await screen.findByTitle('测试线束 · 已折叠')).toBeInTheDocument();
   } finally {
     vi.unstubAllGlobals();
   }

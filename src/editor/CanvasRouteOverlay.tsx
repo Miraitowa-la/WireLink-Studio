@@ -13,8 +13,7 @@ export type WireDraft = {
 };
 export type HarnessDraft = {
   source?: Point;
-  target?: Point;
-  trunkPoints: Point[];
+  points: Point[];
   cursor?: Point;
 };
 export type HarnessDragging = {
@@ -104,21 +103,19 @@ export function CanvasRouteOverlay({
               r="5"
             />
           )}
-          {harnessDraft.target && (
-            <circle
-              cx={harnessDraft.target.x}
-              cy={harnessDraft.target.y}
-              r="5"
-            />
-          )}
+          {harnessDraft.points.map((point, index) => (
+            <circle key={index} cx={point.x} cy={point.y} r="4" />
+          ))}
           {harnessDraft.source &&
-            (harnessDraft.target || harnessDraft.cursor) && (
+            (harnessDraft.points.length > 0 || harnessDraft.cursor) && (
               <path
                 d={
                   wirePath(
                     harnessDraft.source,
-                    harnessDraft.target ?? harnessDraft.cursor!,
-                    harnessDraft.trunkPoints,
+                    harnessDraft.cursor ?? harnessDraft.points.at(-1)!,
+                    harnessDraft.cursor
+                      ? harnessDraft.points
+                      : harnessDraft.points.slice(0, -1),
                   ).path
                 }
               />
@@ -156,8 +153,10 @@ export function CanvasRouteOverlay({
                     {source && (
                       <path d={wirePath(source, harnessDraft.source!).path} />
                     )}
-                    {target && harnessDraft.target && (
-                      <path d={wirePath(target, harnessDraft.target).path} />
+                    {target && harnessDraft.points.length > 0 && (
+                      <path
+                        d={wirePath(target, harnessDraft.points.at(-1)!).path}
+                      />
                     )}
                   </g>
                 );

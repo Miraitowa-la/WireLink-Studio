@@ -6,6 +6,7 @@ import {
 } from '../model/project';
 import {
   createHarnessFromWires,
+  finalizeHarnessPath,
   removeWire,
   routeHarness,
   selectedHarnessWires,
@@ -82,6 +83,25 @@ const details = {
   cableModel: '',
   shielded: false,
 };
+
+test('the last clicked harness point becomes the second junction on completion', () => {
+  const source = { x: 180, y: 60 };
+  const turn = { x: 240, y: 90 };
+  const target = { x: 330, y: 90 };
+  expect(finalizeHarnessPath(undefined, [target])).toBeNull();
+  expect(finalizeHarnessPath(source, [])).toBeNull();
+  expect(finalizeHarnessPath(source, [source])).toBeNull();
+  expect(finalizeHarnessPath(source, [target])).toEqual({
+    sourceJunction: source,
+    targetJunction: target,
+    trunkPoints: [],
+  });
+  expect(finalizeHarnessPath(source, [turn, target])).toEqual({
+    sourceJunction: source,
+    targetJunction: target,
+    trunkPoints: [turn],
+  });
+});
 
 test('groups existing wires, keeps original paths, and normalizes reverse direction only for display', () => {
   const project = projectWithWires();
