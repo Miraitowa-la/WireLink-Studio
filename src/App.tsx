@@ -156,6 +156,7 @@ export default function App() {
   function restoreProject(next: Project) {
     projectRef.current = next;
     setProject(next);
+    setRoutingHarnessId(null);
     setDirty(next !== savedProject.current);
     setStatus(null);
     setSelectedId((id) =>
@@ -197,6 +198,7 @@ export default function App() {
     projectSession.current += 1;
     history.current = { past: [], future: [] };
     setProject(next);
+    setRoutingHarnessId(null);
     fileHandle.current = null;
     setDirty(true);
     setSelectedId(null);
@@ -209,6 +211,7 @@ export default function App() {
   function backToWelcome() {
     if (!canReplaceProject()) return;
     setProject(null);
+    setRoutingHarnessId(null);
     projectRef.current = null;
     savedProject.current = null;
     projectSession.current += 1;
@@ -228,6 +231,7 @@ export default function App() {
     projectSession.current += 1;
     history.current = { past: [], future: [] };
     setProject(next);
+    setRoutingHarnessId(null);
     setProjectName(next.name);
     fileHandle.current = handle;
     setDirty(false);

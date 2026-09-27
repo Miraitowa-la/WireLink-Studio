@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 import App from './App';
+import { createEmptyProject } from './model/project';
 
 test('shows the project shell', () => {
   render(<App />);
@@ -53,4 +54,28 @@ test('offers export formats and prepares the print diagram', () => {
   expect(print).toHaveBeenCalledOnce();
   expect(document.querySelector('.print-sheet svg')).not.toBeNull();
   print.mockRestore();
+});
+
+test('clears harness routing when replacing the project', async () => {
+  const project = createEmptyProject('已有工程');
+  project.harnesses = [
+    { id: 'harness', name: '测试线束', color: '#7045e5', collapsed: false },
+  ];
+  vi.stubGlobal('showOpenFilePicker', async () => [
+    {
+      name: 'existing.wlproj',
+      getFile: async () => ({ text: async () => JSON.stringify(project) }),
+    },
+  ]);
+  try {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '打开工程' }));
+    fireEvent.click(await screen.findByTitle('测试线束 · 待走线'));
+    fireEvent.click(screen.getByRole('button', { name: '线束走线' }));
+    expect(screen.getByText('点击网格设置起点汇合点')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '新建' }));
+    expect(screen.queryByText('点击网格设置起点汇合点')).toBeNull();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
