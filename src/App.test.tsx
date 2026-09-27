@@ -81,3 +81,79 @@ test('clears harness routing when replacing the project', async () => {
     vi.unstubAllGlobals();
   }
 });
+
+test('clears an unfinished wire when opening another project', async () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const makeProject = (name: string, id: string) => {
+    const project = createEmptyProject(name);
+    project.terminalTypes = [
+      {
+        id: 'signal',
+        name: '信号',
+        color: '#345',
+        compatibleTypeIds: ['signal'],
+      },
+    ];
+    project.devices = [
+      {
+        id,
+        name,
+        position: { x: 0, y: 0 },
+        templateSnapshot: {
+          id: `template-${id}`,
+          name,
+          category: '',
+          width: 180,
+          height: 120,
+          appearance: { kind: 'default' as const },
+          terminals: [
+            {
+              id: 'port',
+              label: '端子',
+              typeId: 'signal',
+              side: 'right' as const,
+              order: 0,
+              maxConnections: 1,
+            },
+          ],
+        },
+      },
+    ];
+    return project;
+  };
+  const projects = [makeProject('旧工程', 'old'), makeProject('新工程', 'new')];
+  vi.stubGlobal('showOpenFilePicker', async () => [
+    {
+      name: 'project.wlproj',
+      getFile: async () => ({
+        text: async () => JSON.stringify(projects.shift()),
+      }),
+    },
+  ]);
+  try {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '打开工程' }));
+    fireEvent.click(await screen.findByTitle('端子 · 信号'));
+    expect(screen.getByText(/点击网格点确定下一点/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '打开' }));
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: '工程名称' })).toHaveValue(
+        '新工程',
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText(/点击网格点确定下一点/)).toBeNull(),
+    );
+    fireEvent.click(screen.getByTitle('端子 · 信号'));
+    expect(screen.getByText(/点击网格点确定下一点/)).toBeInTheDocument();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

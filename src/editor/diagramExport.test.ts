@@ -1,10 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import { createEmptyProject } from '../model/project';
-import {
-  renderDiagramSvg,
-  renderPrintPages,
-  renderViewerHtml,
-} from './diagramExport';
+import { renderDiagramSvg, renderPrintPages } from './diagramExport';
+import { renderViewerHtml } from './diagramViewer';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
 import { deviceTerminalLayout } from './device';
 import { wirePath } from './wireGeometry';

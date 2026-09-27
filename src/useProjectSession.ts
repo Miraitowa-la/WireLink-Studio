@@ -19,6 +19,7 @@ export function useProjectSession(
   const [projectName, setProjectName] = useState('未命名工程');
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<Status>(null);
+  const [sessionId, setSessionId] = useState(0);
   const fileHandle = useRef<ProjectFileHandle | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const projectRef = useRef<Project | null>(null);
@@ -88,6 +89,7 @@ export function useProjectSession(
     projectRef.current = next;
     savedProject.current = null;
     projectSession.current += 1;
+    setSessionId(projectSession.current);
     history.current = { past: [], future: [] };
     setProject(next);
     fileHandle.current = null;
@@ -102,6 +104,7 @@ export function useProjectSession(
     projectRef.current = null;
     savedProject.current = null;
     projectSession.current += 1;
+    setSessionId(projectSession.current);
     history.current = { past: [], future: [] };
     fileHandle.current = null;
     setDirty(false);
@@ -113,6 +116,7 @@ export function useProjectSession(
     projectRef.current = next;
     savedProject.current = next;
     projectSession.current += 1;
+    setSessionId(projectSession.current);
     history.current = { past: [], future: [] };
     setProject(next);
     setProjectName(next.name);
@@ -179,6 +183,8 @@ export function useProjectSession(
     }
   }
 
+  const getProject = () => projectRef.current;
+
   return {
     project,
     projectName,
@@ -187,8 +193,10 @@ export function useProjectSession(
     status,
     setStatus,
     fileInput,
-    projectRef,
-    history,
+    sessionId,
+    getProject,
+    canUndo: history.current.past.length > 0,
+    canRedo: history.current.future.length > 0,
     changeProject,
     undo,
     redo,

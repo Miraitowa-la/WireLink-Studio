@@ -22,6 +22,7 @@ import {
   ungroupHarness,
 } from './editor/harness';
 import { pruneAssets } from './editor/assets';
+import { removeDevice, removeTerminalType } from './editor/projectOperations';
 import {
   deviceTemplateSchema,
   terminalTypeSchema,
@@ -62,8 +63,10 @@ export default function App() {
     status,
     setStatus,
     fileInput,
-    projectRef,
-    history,
+    sessionId,
+    getProject,
+    canUndo,
+    canRedo,
     changeProject,
     undo,
     redo,
@@ -87,6 +90,7 @@ export default function App() {
     },
     () => {
       setRoutingHarnessId(null);
+      setEditor(null);
       setSelectedId(null);
       setSelectedWireId(null);
       setSelectedHarnessId(null);
@@ -140,10 +144,10 @@ export default function App() {
 
   async function exportCurrent(format: 'json' | 'svg' | 'png' | 'html') {
     exportMenu.current?.removeAttribute('open');
-    const snapshot = projectRef.current;
+    const snapshot = getProject();
     if (!snapshot) return;
     try {
-      const { exportDiagram } = await import('./editor/diagramExport');
+      const { exportDiagram } = await import('./editor/diagramFiles');
       await exportDiagram(snapshot, format);
       setStatus({ kind: 'info', text: `${format.toUpperCase()} 文件已导出` });
     } catch (error) {
@@ -153,7 +157,7 @@ export default function App() {
 
   async function printCurrent() {
     exportMenu.current?.removeAttribute('open');
-    const snapshot = projectRef.current;
+    const snapshot = getProject();
     if (!snapshot) return;
     try {
       const { renderPrintPages } = await import('./editor/diagramExport');
@@ -203,7 +207,7 @@ export default function App() {
   }
 
   function startHarnessCreation(wireIds: string[]) {
-    const current = projectRef.current;
+    const current = getProject();
     if (!current) return;
     try {
       selectedHarnessWires(current, wireIds);
@@ -219,7 +223,7 @@ export default function App() {
       'name' | 'number' | 'color' | 'note' | 'cableModel' | 'shielded'
     >,
   ): string | null {
-    const current = projectRef.current;
+    const current = getProject();
     if (!current || editor?.kind !== 'harness-create') return '未选择导线';
     try {
       const next = createHarnessFromWires(current, editor.wireIds, details);
@@ -266,30 +270,17 @@ export default function App() {
   }
 
   function deleteType(type: TerminalType) {
-    if (!project) return;
-    const referenced =
-      project.deviceLibrary.some((template) =>
-        template.terminals.some((terminal) => terminal.typeId === type.id),
-      ) ||
-      project.devices.some((device) =>
-        device.templateSnapshot.terminals.some(
-          (terminal) => terminal.typeId === type.id,
-        ),
-      );
-    if (referenced) {
-      setStatus({
-        kind: 'error',
-        text: `端子类型“${type.name}”仍被设备引用，不能删除`,
-      });
+    const current = getProject();
+    if (!current) return;
+    let next;
+    try {
+      next = removeTerminalType(current, type.id);
+    } catch (error) {
+      setStatus({ kind: 'error', text: errorMessage(error) });
       return;
     }
     if (!window.confirm(`删除端子类型“${type.name}”？`)) return;
-    changeProject((current) => ({
-      ...current,
-      terminalTypes: current.terminalTypes.filter(
-        (item) => item.id !== type.id,
-      ),
-    }));
+    changeProject(() => next);
   }
 
   function deleteTemplate(template: DeviceTemplate) {
@@ -373,7 +364,7 @@ export default function App() {
     target: WireEndpoint,
     routePoints: { x: number; y: number }[],
   ): boolean {
-    const current = projectRef.current;
+    const current = getProject();
     if (!current) return false;
     try {
       const next = addWire(current, source, target);
@@ -408,30 +399,7 @@ export default function App() {
       !window.confirm('删除选中设备及其所有关联导线和线束？')
     )
       return;
-    changeProject((current) => {
-      const removedWires = current.wires.filter(
-        (wire) =>
-          wire.source.deviceId === selectedId ||
-          wire.target.deviceId === selectedId,
-      );
-      const removedHarnesses = new Set(
-        removedWires
-          .map((wire) => wire.harnessId)
-          .filter((id): id is string => !!id),
-      );
-      return pruneAssets({
-        ...current,
-        devices: current.devices.filter((device) => device.id !== selectedId),
-        wires: current.wires.filter(
-          (wire) =>
-            !removedWires.includes(wire) &&
-            !removedHarnesses.has(wire.harnessId ?? ''),
-        ),
-        harnesses: current.harnesses.filter(
-          (harness) => !removedHarnesses.has(harness.id),
-        ),
-      });
-    });
+    changeProject((current) => removeDevice(current, selectedId));
     setSelectedId(null);
     setSelectedWireId(null);
   }
@@ -458,10 +426,10 @@ export default function App() {
   }
 
   function locateWire(id: string) {
-    const wire = projectRef.current?.wires.find((item) => item.id === id);
+    const wire = getProject()?.wires.find((item) => item.id === id);
     if (
       wire?.harnessId &&
-      projectRef.current?.harnesses.some(
+      getProject()?.harnesses.some(
         (harness) => harness.id === wire.harnessId && harness.collapsed,
       )
     ) {
@@ -556,7 +524,7 @@ export default function App() {
         <nav className="toolbar-actions" aria-label="工程操作">
           <button
             type="button"
-            disabled={history.current.past.length === 0}
+            disabled={!canUndo}
             onClick={undo}
             title="Ctrl+Z"
           >
@@ -564,7 +532,7 @@ export default function App() {
           </button>
           <button
             type="button"
-            disabled={history.current.future.length === 0}
+            disabled={!canRedo}
             onClick={redo}
             title="Ctrl+Y / Ctrl+Shift+Z"
           >
@@ -650,6 +618,7 @@ export default function App() {
             fallback={<div className="canvas-empty">正在加载画布…</div>}
           >
             <DeviceCanvas
+              key={sessionId}
               project={project}
               selectedDeviceId={selectedId}
               selectedWireId={selectedWireId}
