@@ -292,16 +292,23 @@ export function TemplateEditor({
             />
           </label>
           <label>
-            默认宽度（每格 30）
+            默认宽度（留空自动；每格 30）
             <input
               type="number"
               min={MIN_DEVICE_WIDTH}
               step={GRID_SIZE}
-              value={draft.width}
+              value={draft.width ?? ''}
               onChange={(event) =>
-                setDraft({ ...draft, width: Number(event.target.value) })
+                setDraft({
+                  ...draft,
+                  width:
+                    event.target.value === ''
+                      ? null
+                      : Number(event.target.value),
+                })
               }
               onBlur={(event) => {
+                if (event.currentTarget.value === '') return;
                 const value = Number(event.currentTarget.value);
                 setDraft((current) => ({
                   ...current,
@@ -311,16 +318,23 @@ export function TemplateEditor({
             />
           </label>
           <label>
-            默认高度（每格 30）
+            默认高度（留空自动；每格 30）
             <input
               type="number"
               min={MIN_DEVICE_HEIGHT}
               step={GRID_SIZE}
-              value={draft.height}
+              value={draft.height ?? ''}
               onChange={(event) =>
-                setDraft({ ...draft, height: Number(event.target.value) })
+                setDraft({
+                  ...draft,
+                  height:
+                    event.target.value === ''
+                      ? null
+                      : Number(event.target.value),
+                })
               }
               onBlur={(event) => {
+                if (event.currentTarget.value === '') return;
                 const value = Number(event.currentTarget.value);
                 setDraft((current) => ({
                   ...current,
@@ -538,10 +552,12 @@ export function TemplateEditor({
             className="primary"
             disabled={
               !draft.name.trim() ||
-              !Number.isFinite(draft.width) ||
-              !Number.isFinite(draft.height) ||
-              draft.width < MIN_DEVICE_WIDTH ||
-              draft.height < MIN_DEVICE_HEIGHT ||
+              (draft.width !== null &&
+                (!Number.isFinite(draft.width) ||
+                  draft.width < MIN_DEVICE_WIDTH)) ||
+              (draft.height !== null &&
+                (!Number.isFinite(draft.height) ||
+                  draft.height < MIN_DEVICE_HEIGHT)) ||
               draft.terminals.some(
                 (terminal) =>
                   !terminal.label.trim() ||
@@ -556,8 +572,14 @@ export function TemplateEditor({
                 {
                   ...draft,
                   name: draft.name.trim(),
-                  width: snapSizeToGrid(draft.width, MIN_DEVICE_WIDTH),
-                  height: snapSizeToGrid(draft.height, MIN_DEVICE_HEIGHT),
+                  width:
+                    draft.width === null
+                      ? null
+                      : snapSizeToGrid(draft.width, MIN_DEVICE_WIDTH),
+                  height:
+                    draft.height === null
+                      ? null
+                      : snapSizeToGrid(draft.height, MIN_DEVICE_HEIGHT),
                   appearance:
                     draft.appearance.kind === 'image' && !imageAsset
                       ? { kind: 'default' }

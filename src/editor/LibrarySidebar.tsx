@@ -55,29 +55,34 @@ export function LibrarySidebar({
           <p className="empty-hint">尚无端子类型</p>
         )}
         {currentTypes.map((type) => (
-          <div key={type.id} className="library-item">
-            <span
-              className="color-dot"
-              style={{ backgroundColor: type.color }}
-            />
-            <span className="library-item-name" title={type.name}>
-              {type.name}
-            </span>
-            <button
-              type="button"
-              aria-label={`编辑端子类型 ${type.name}`}
-              onClick={() => setEditor({ kind: 'type', value: type })}
-            >
-              编辑
-            </button>
-            <button
-              type="button"
-              className="danger-text"
-              aria-label={`删除端子类型 ${type.name}`}
-              onClick={() => deleteType(type)}
-            >
-              ×
-            </button>
+          <div key={type.id} className="library-card library-card-row">
+            <div className="library-card-heading">
+              <span
+                className="color-dot"
+                style={{ backgroundColor: type.color }}
+              />
+              <div className="library-card-copy">
+                <strong title={type.name}>{type.name}</strong>
+                <small>端子类型</small>
+              </div>
+            </div>
+            <div className="template-actions">
+              <button
+                type="button"
+                aria-label={`编辑端子类型 ${type.name}`}
+                onClick={() => setEditor({ kind: 'type', value: type })}
+              >
+                编辑
+              </button>
+              <button
+                type="button"
+                className="danger-text"
+                aria-label={`删除端子类型 ${type.name}`}
+                onClick={() => deleteType(type)}
+              >
+                删除
+              </button>
+            </div>
           </div>
         ))}
       </section>
@@ -102,13 +107,13 @@ export function LibrarySidebar({
         {currentTemplates.map((template) => (
           <div
             key={template.id}
-            className="template-item"
+            className="template-item library-card library-card-row"
             draggable
             onDragStart={(event) =>
               event.dataTransfer.setData(TEMPLATE_DRAG_TYPE, template.id)
             }
           >
-            <div>
+            <div className="library-card-copy">
               <strong>{template.name}</strong>
               <small>
                 {template.category || '未分类'} · {template.terminals.length}{' '}
@@ -152,7 +157,7 @@ export function LibrarySidebar({
               <button
                 key={harness.id}
                 type="button"
-                className={`canvas-harness-item${selectedHarnessId === harness.id ? ' is-selected' : ''}`}
+                className={`canvas-harness-item library-card${selectedHarnessId === harness.id ? ' is-selected' : ''}`}
                 aria-current={
                   selectedHarnessId === harness.id ? 'true' : undefined
                 }
@@ -165,7 +170,7 @@ export function LibrarySidebar({
                     backgroundColor: harness.color,
                   }}
                 />
-                <span className="canvas-harness-copy">
+                <span className="library-card-copy">
                   <strong>{harness.number || harness.name}</strong>
                   <small>
                     {harness.number && harness.name !== harness.number

@@ -6,6 +6,36 @@ import type {
 } from '../model/project';
 import type { Point } from './wireGeometry';
 
+export function editHarnessRoutePoint(
+  route: HarnessRoute,
+  kind: 'sourceJunction' | 'targetJunction' | 'trunk' | 'source' | 'target',
+  point: Point | null,
+  index?: number,
+  wireId?: string,
+  insert = false,
+): HarnessRoute {
+  if (kind === 'sourceJunction' || kind === 'targetJunction')
+    return point ? { ...route, [kind]: point } : route;
+  if (index === undefined) return route;
+  if (kind === 'trunk') {
+    const trunkPoints = [...route.trunkPoints];
+    if (point) trunkPoints.splice(index, insert ? 0 : 1, point);
+    else trunkPoints.splice(index, 1);
+    return { ...route, trunkPoints };
+  }
+  return {
+    ...route,
+    branches: route.branches.map((branch) => {
+      if (branch.wireId !== wireId) return branch;
+      const key = kind === 'source' ? 'sourcePoints' : 'targetPoints';
+      const points = [...branch[key]];
+      if (point) points.splice(index, insert ? 0 : 1, point);
+      else points.splice(index, 1);
+      return { ...branch, [key]: points };
+    }),
+  };
+}
+
 export function finalizeHarnessPath(
   source: Point | undefined,
   points: Point[],

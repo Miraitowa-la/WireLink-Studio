@@ -10,14 +10,17 @@ import type {
 export const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
 export const GRID_SIZE = 30;
 export const TEMPLATE_DRAG_TYPE = 'application/wirelink-device-template';
-export const MIN_DEVICE_WIDTH = 180;
+export const MIN_DEVICE_WIDTH = 120;
 export const MIN_DEVICE_HEIGHT = 120;
 
-export const snapToGrid = (value: number) =>
-  Math.round(value / GRID_SIZE) * GRID_SIZE || 0;
-export const snapPointToGrid = (point: { x: number; y: number }) => ({
-  x: snapToGrid(point.x),
-  y: snapToGrid(point.y),
+export const snapToGrid = (value: number, step = GRID_SIZE) =>
+  Math.round(value / step) * step || 0;
+export const snapPointToGrid = (
+  point: { x: number; y: number },
+  step = GRID_SIZE,
+) => ({
+  x: snapToGrid(point.x, step),
+  y: snapToGrid(point.y, step),
 });
 export const snapSizeToGrid = (value: number, minimum: number) =>
   Math.max(minimum, snapToGrid(Number.isFinite(value) ? value : minimum));
@@ -26,10 +29,20 @@ export const terminalOffset = (
   sideLength: number,
   count: number,
   index: number,
-) =>
-  Math.floor((sideLength - (count - 1) * GRID_SIZE) / (2 * GRID_SIZE)) *
-    GRID_SIZE +
-  index * GRID_SIZE;
+) => snapToGrid((sideLength - (count - 1) * GRID_SIZE) / 2) + index * GRID_SIZE;
+
+function fittedSideLength(
+  requested: number,
+  firstCount: number,
+  secondCount: number,
+  emptySize: number,
+) {
+  const count = Math.max(firstCount, secondCount);
+  const minimum = count ? (count + 3) * GRID_SIZE : emptySize;
+  let length = growToGrid(Math.max(requested, minimum));
+  if (count && (length / GRID_SIZE - count + 1) % 2 !== 0) length += GRID_SIZE;
+  return length;
+}
 export function deviceTerminalLayout(device: DeviceInstance) {
   const { width, height } = getDeviceSize(device);
   const { x, y } = device.position;
@@ -77,8 +90,8 @@ export function createDeviceTemplate(): DeviceTemplate {
     id: crypto.randomUUID(),
     name: '新设备',
     category: '',
-    width: 240,
-    height: 180,
+    width: null,
+    height: null,
     appearance: { kind: 'default' },
     terminals: [],
   };
@@ -128,28 +141,20 @@ export function getDeviceSize(device: DeviceInstance): {
   height: number;
 } {
   const terminals = device.templateSnapshot.terminals;
-  const horizontal = Math.max(
-    terminals.filter((terminal) => terminal.side === 'top').length,
-    terminals.filter((terminal) => terminal.side === 'bottom').length,
-  );
-  const vertical = Math.max(
-    terminals.filter((terminal) => terminal.side === 'left').length,
-    terminals.filter((terminal) => terminal.side === 'right').length,
-  );
+  const count = (side: Side) =>
+    terminals.filter((terminal) => terminal.side === side).length;
   return {
-    width: growToGrid(
-      Math.max(
-        device.size?.width ?? device.templateSnapshot.width,
-        (horizontal + 1) * 76,
-        MIN_DEVICE_WIDTH,
-      ),
+    width: fittedSideLength(
+      device.size?.width ?? device.templateSnapshot.width ?? 0,
+      count('top'),
+      count('bottom'),
+      180,
     ),
-    height: growToGrid(
-      Math.max(
-        device.size?.height ?? device.templateSnapshot.height,
-        (vertical + 1) * 48,
-        MIN_DEVICE_HEIGHT,
-      ),
+    height: fittedSideLength(
+      device.size?.height ?? device.templateSnapshot.height ?? 0,
+      count('left'),
+      count('right'),
+      MIN_DEVICE_HEIGHT,
     ),
   };
 }

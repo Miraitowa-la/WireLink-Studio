@@ -1,7 +1,7 @@
 import { useReactFlow } from '@xyflow/react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Project, WireEndpoint } from '../model/project';
-import { snapPointToGrid } from './device';
+import { GRID_SIZE, snapPointToGrid } from './device';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
 import { wirePath, type Point } from './wireGeometry';
 import type { CanvasMenu } from './CanvasContextMenu';
@@ -20,6 +20,7 @@ export type HarnessDragging = {
   kind: 'sourceJunction' | 'targetJunction' | 'trunk' | 'source' | 'target';
   wireId?: string;
   index?: number;
+  point: Point;
 };
 export type WireDragging = { wireId: string; pointIndex: number; point: Point };
 
@@ -64,13 +65,16 @@ export function CanvasRouteOverlay({
   onUpdateWireRoute(id: string, points: Point[]): void;
 }) {
   const { screenToFlowPosition } = useReactFlow();
-  const selectedHarness = project.harnesses.find(
-    (item) => item.id === selectedHarnessId,
-  );
+  const editing = !draft && !routingHarnessId;
+  const selectedHarness = editing
+    ? project.harnesses.find((item) => item.id === selectedHarnessId)
+    : undefined;
   const selectedHarnessGeometry = selectedHarness?.collapsed
     ? collapsedHarnessGeometry(project, selectedHarness.id)
     : null;
-  const selectedWire = project.wires.find((wire) => wire.id === selectedWireId);
+  const selectedWire = editing
+    ? project.wires.find((wire) => wire.id === selectedWireId)
+    : undefined;
   const selectedSource =
     selectedWire && terminalPoint(project, selectedWire.source);
   const selectedTarget =
@@ -226,6 +230,21 @@ export function CanvasRouteOverlay({
                 kind: marker.kind,
                 wireId: 'wireId' in marker ? marker.wireId : undefined,
                 index: 'index' in marker ? marker.index : undefined,
+                point: marker.point,
+              });
+            }}
+            onPointerMove={(event) => {
+              if (!harnessDragging) return;
+              event.stopPropagation();
+              setHarnessDragging({
+                ...harnessDragging,
+                point: snapPointToGrid(
+                  screenToFlowPosition(
+                    { x: event.clientX, y: event.clientY },
+                    { snapToGrid: false },
+                  ),
+                  GRID_SIZE / 2,
+                ),
               });
             }}
             onPointerUp={(event) => {
@@ -235,10 +254,11 @@ export function CanvasRouteOverlay({
                 selectedHarness.id,
                 harnessDragging.kind,
                 snapPointToGrid(
-                  screenToFlowPosition({
-                    x: event.clientX,
-                    y: event.clientY,
-                  }),
+                  screenToFlowPosition(
+                    { x: event.clientX, y: event.clientY },
+                    { snapToGrid: false },
+                  ),
+                  GRID_SIZE / 2,
                 ),
                 harnessDragging.index,
                 harnessDragging.wireId,
@@ -253,7 +273,18 @@ export function CanvasRouteOverlay({
           key={`${selectedWire.id}:${index}`}
           type="button"
           className="wire-route-point nodrag nopan"
-          style={{ left: point.x, top: point.y }}
+          style={{
+            left:
+              dragging?.wireId === selectedWire.id &&
+              dragging.pointIndex === index
+                ? dragging.point.x
+                : point.x,
+            top:
+              dragging?.wireId === selectedWire.id &&
+              dragging.pointIndex === index
+                ? dragging.point.y
+                : point.y,
+          }}
           title={`路径点 ${index + 1}：拖动调整，右键删除`}
           aria-label={`路径点 ${index + 1}`}
           onClick={(event) => event.stopPropagation()}

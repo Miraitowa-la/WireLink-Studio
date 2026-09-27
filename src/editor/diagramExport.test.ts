@@ -280,7 +280,7 @@ test('collapsed harness keeps every terminal connected, including mixed sides', 
   expect(geometry).not.toBeNull();
   expect(geometry!.branches.match(/M/g)).toHaveLength(8);
   expect(geometry!.branches).toContain('M20 40');
-  expect(geometry!.branches).toContain('M520 280');
+  expect(geometry!.branches).toContain('M520 250');
   expect(geometry!.trunk).toContain('L270 120');
   expect(geometry!.branches).not.toContain('NaN');
   expect(

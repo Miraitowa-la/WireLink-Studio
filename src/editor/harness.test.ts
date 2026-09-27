@@ -6,6 +6,7 @@ import {
 } from '../model/project';
 import {
   createHarnessFromWires,
+  editHarnessRoutePoint,
   finalizeHarnessPath,
   removeWire,
   routeHarness,
@@ -101,6 +102,37 @@ test('the last clicked harness point becomes the second junction on completion',
     targetJunction: target,
     trunkPoints: [turn],
   });
+});
+
+test('drag preview changes harness geometry without mutating the saved route', () => {
+  const project = projectWithWires();
+  const grouped = createHarnessFromWires(project, ['a', 'b'], details);
+  const routed = routeHarness(grouped, grouped.harnesses[0].id, {
+    sourceDeviceId: 'left',
+    targetDeviceId: 'right',
+    sourceJunction: { x: 210, y: 60 },
+    targetJunction: { x: 330, y: 60 },
+    trunkPoints: [],
+    branches: [
+      { wireId: 'a', sourcePoints: [], targetPoints: [] },
+      { wireId: 'b', sourcePoints: [], targetPoints: [] },
+    ],
+  });
+  const original = routed.harnesses[0].route!;
+  const preview = {
+    ...routed,
+    harnesses: routed.harnesses.map((harness) => ({
+      ...harness,
+      route: editHarnessRoutePoint(original, 'sourceJunction', {
+        x: 225,
+        y: 75,
+      }),
+    })),
+  };
+  expect(
+    collapsedHarnessGeometry(preview, routed.harnesses[0].id)?.trunk,
+  ).toContain('225 75');
+  expect(original.sourceJunction).toEqual({ x: 210, y: 60 });
 });
 
 test('groups existing wires, keeps original paths, and normalizes reverse direction only for display', () => {

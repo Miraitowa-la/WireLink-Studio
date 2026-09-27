@@ -352,25 +352,45 @@ p {
 .empty-hint {
   padding: 8px 5px;
 }
-.library-item {
+.library-card {
+  padding: 10px;
+  border: 1px solid #e2ebf3;
+  border-radius: 9px;
+  margin-bottom: 8px;
+  background: #fafcff;
+}
+.library-card-row {
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-height: 37px;
-  padding: 3px;
+  gap: 8px;
 }
-.library-item button {
-  border: 0;
-  font-size: 11px;
-  padding: 4px 5px;
-}
-.library-item-name {
+.library-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
   min-width: 0;
+}
+.library-card-row > .library-card-copy {
+  flex: 1;
+}
+.library-card-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.library-card-copy strong,
+.library-card-copy small {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.library-card-copy strong {
   font-size: 12px;
+}
+.library-card-copy small {
+  color: #7890a6;
+  font-size: 11px;
 }
 .canvas-harness-list {
   display: grid;
@@ -382,33 +402,17 @@ p {
   gap: 8px;
   width: 100%;
   min-height: 48px;
-  padding: 7px 9px;
   text-align: left;
-  border-color: #e2ebf3;
-  background: #fafcff;
+}
+.canvas-harness-list .library-card {
+  margin-bottom: 0;
 }
 .canvas-harness-item.is-selected {
   border-color: #4b87c3;
   background: #eaf4ff;
 }
-.canvas-harness-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
+.canvas-harness-item .library-card-copy {
   flex: 1;
-}
-.canvas-harness-copy strong,
-.canvas-harness-copy small {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.canvas-harness-copy strong {
-  font-size: 12px;
-}
-.canvas-harness-copy small {
-  font-size: 10px;
-  color: #7890a6;
 }
 .canvas-harness-state {
   flex: none;
@@ -425,31 +429,18 @@ p {
   border-radius: 50%;
   flex: none;
 }
-.template-item {
-  padding: 11px 9px;
-  border: 1px solid #e2ebf3;
-  border-radius: 9px;
-  margin-bottom: 8px;
-  background: #fafcff;
-}
 .template-item[draggable='true'] {
   cursor: grab;
-}
-.template-item strong {
-  display: block;
-  font-size: 12px;
-}
-.template-item small {
-  display: block;
-  color: #7890a6;
-  margin-top: 2px;
-  font-size: 11px;
 }
 .template-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
   margin-top: 9px;
+}
+.library-card-row .template-actions {
+  justify-content: flex-end;
+  margin-top: 0;
 }
 .template-actions button {
   padding: 4px 6px;

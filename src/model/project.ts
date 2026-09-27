@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PROJECT_VERSION = 3 as const;
+export const PROJECT_VERSION = 4 as const;
 
 const id = z.string().min(1);
 const label = z.string().min(1);
@@ -56,8 +56,8 @@ export const deviceTemplateSchema = z.looseObject({
   id,
   name: label,
   category: z.string(),
-  width: size.shape.width,
-  height: size.shape.height,
+  width: size.shape.width.nullable(),
+  height: size.shape.height.nullable(),
   appearance: deviceAppearanceSchema,
   terminals: z.array(terminalDefinitionSchema),
   note: z.string().optional(),
@@ -147,6 +147,10 @@ export const projectSchema = z.looseObject({
     .optional(),
 });
 export type Project = z.infer<typeof projectSchema>;
+const previousProjectSchema = z.looseObject({
+  ...projectSchema.shape,
+  version: z.literal(3),
+});
 
 export function createEmptyProject(name = '未命名工程'): Project {
   return {
@@ -215,13 +219,16 @@ export function parseProjectFile(content: string): Project {
   if (!('version' in data)) {
     throw new Error('工程文件缺少版本号');
   }
-  if (data.version !== PROJECT_VERSION) {
+  if (data.version !== 3 && data.version !== PROJECT_VERSION) {
     throw new Error(
-      `不支持的工程版本：${String(data.version)}；当前支持版本 ${PROJECT_VERSION}`,
+      `不支持的工程版本：${String(data.version)}；当前支持版本 3、${PROJECT_VERSION}`,
     );
   }
 
-  const result = projectSchema.safeParse(data);
+  const result =
+    data.version === 3
+      ? previousProjectSchema.safeParse(data)
+      : projectSchema.safeParse(data);
   if (!result.success) {
     const issue = result.error.issues[0];
     const path = issue.path.join('.') || '根节点';
@@ -232,8 +239,9 @@ export function parseProjectFile(content: string): Project {
     throw new Error(`工程结构无效：${path} ${reason}`);
   }
 
-  assertProjectIds(result.data);
-  return result.data;
+  const project = { ...result.data, version: PROJECT_VERSION };
+  assertProjectIds(project);
+  return project;
 }
 
 export function serializeProjectFile(project: Project): string {

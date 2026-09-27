@@ -101,6 +101,27 @@ test('finishes harness routing on Enter using the last temporary point', async (
     source: { deviceId: 'left', terminalId: id },
     target: { deviceId: 'right', terminalId: id },
   }));
+  project.devices = (['left', 'right'] as const).map((id, index) => ({
+    id,
+    name: id,
+    position: { x: index * 360, y: 0 },
+    templateSnapshot: {
+      id,
+      name: id,
+      category: '',
+      width: 180,
+      height: 120,
+      appearance: { kind: 'default' as const },
+      terminals: ['one', 'two'].map((terminalId, order) => ({
+        id: terminalId,
+        label: terminalId,
+        typeId: 'signal',
+        side: (id === 'left' ? 'right' : 'left') as 'right' | 'left',
+        order,
+        maxConnections: 1,
+      })),
+    },
+  }));
   vi.stubGlobal('showOpenFilePicker', async () => [
     {
       name: 'routing.wlproj',
@@ -140,6 +161,17 @@ test('finishes harness routing on Enter using the last temporary point', async (
     expect(screen.getByText(/点击追加至少一个路径点/)).toBeInTheDocument();
     fireEvent.keyDown(canvas, { key: 'Enter' });
     expect(await screen.findByTitle('测试线束 · 已折叠')).toBeInTheDocument();
+    expect(
+      screen.getAllByTitle('拖动调整；右键删除分支或主干路径点'),
+    ).toHaveLength(2);
+    fireEvent.contextMenu(
+      screen.getAllByTitle('拖动调整；右键删除分支或主干路径点')[0],
+    );
+    fireEvent.click(screen.getByRole('button', { name: '重新走线' }));
+    expect(
+      screen.queryAllByTitle('拖动调整；右键删除分支或主干路径点'),
+    ).toHaveLength(0);
+    expect(screen.queryByRole('menu')).toBeNull();
   } finally {
     vi.unstubAllGlobals();
   }

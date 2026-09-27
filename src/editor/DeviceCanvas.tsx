@@ -18,7 +18,7 @@ import {
   TEMPLATE_DRAG_TYPE,
 } from './device';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
-import { finalizeHarnessPath } from './harness';
+import { editHarnessRoutePoint, finalizeHarnessPath } from './harness';
 import { insertionIndex, wirePath, type Point } from './wireGeometry';
 import {
   buildCanvasEdges,
@@ -84,8 +84,15 @@ function Canvas({
   onAddDevice,
   onMoveDevice,
 }: CanvasProps) {
-  const { screenToFlowPosition, fitView, setCenter } = useReactFlow();
+  const { screenToFlowPosition, fitView, setCenter, getViewport, setViewport } =
+    useReactFlow();
   const wrap = useRef<HTMLDivElement>(null);
+  const middlePan = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    viewport: ReturnType<typeof getViewport>;
+  } | null>(null);
   const [draft, setDraft] = useState<WireDraft | null>(null);
   const [multiWireIds, setMultiWireIds] = useState<string[]>([]);
   const [harnessDraft, setHarnessDraft] = useState<HarnessDraft | null>(null);
@@ -126,6 +133,9 @@ function Canvas({
     terminalClickRef.current(endpoint),
   ).current;
   const routing = draft !== null || routingHarnessId !== null;
+  useEffect(() => {
+    if (routing) setMenu(null);
+  }, [routing]);
 
   useEffect(() => {
     if (!routing) return;
@@ -255,16 +265,41 @@ function Canvas({
     }
     if (point) void setCenter(point.x, point.y, { zoom: 1, duration: 200 });
   }, [focusTarget, setCenter]);
+  const previewProject = useMemo(() => {
+    if (!harnessDragging || !selectedHarnessId) return project;
+    const harness = project.harnesses.find(
+      (item) => item.id === selectedHarnessId,
+    );
+    const route = harness?.route;
+    if (!route) return project;
+    return {
+      ...project,
+      harnesses: project.harnesses.map((item) =>
+        item.id === selectedHarnessId
+          ? {
+              ...item,
+              route: editHarnessRoutePoint(
+                route,
+                harnessDragging.kind,
+                harnessDragging.point,
+                harnessDragging.index,
+                harnessDragging.wireId,
+              ),
+            }
+          : item,
+      ),
+    };
+  }, [project, selectedHarnessId, harnessDragging]);
   const edges = useMemo(
     () =>
       buildCanvasEdges(
-        project,
+        previewProject,
         selectedWireId,
         multiWireIds,
         selectedHarnessId,
         dragging,
       ),
-    [project, selectedWireId, multiWireIds, selectedHarnessId, dragging],
+    [previewProject, selectedWireId, multiWireIds, selectedHarnessId, dragging],
   );
 
   function menuAt(clientX: number, clientY: number): Point {
@@ -296,6 +331,26 @@ function Canvas({
     });
   }
 
+  function addHarnessDraftPoint(clientX: number, clientY: number) {
+    const point = snapPointToGrid(
+      screenToFlowPosition({ x: clientX, y: clientY }, { snapToGrid: false }),
+      GRID_SIZE / 2,
+    );
+    setHarnessDraft((current) => {
+      const next = current ?? { points: [] };
+      if (!next.source) return { ...next, source: point };
+      const last = next.points.at(-1) ?? next.source;
+      return last.x === point.x && last.y === point.y
+        ? next
+        : { ...next, points: [...next.points, point] };
+    });
+  }
+
+  function addRoutingPoint(clientX: number, clientY: number) {
+    if (routingHarnessId) addHarnessDraftPoint(clientX, clientY);
+    else if (draft) addDraftPoint(clientX, clientY);
+  }
+
   function updateHarnessPoint(
     harnessId: string,
     kind: 'sourceJunction' | 'targetJunction' | 'trunk' | 'source' | 'target',
@@ -308,31 +363,15 @@ function Canvas({
       (item) => item.id === harnessId,
     )?.route;
     if (!route) return;
-    let next: HarnessRoute;
-    if (kind === 'sourceJunction' || kind === 'targetJunction') {
-      if (!point) return;
-      next = { ...route, [kind]: point };
-    } else if (kind === 'trunk') {
-      const trunkPoints = [...route.trunkPoints];
-      if (index === undefined) return;
-      if (point) trunkPoints.splice(index, insert ? 0 : 1, point);
-      else trunkPoints.splice(index, 1);
-      next = { ...route, trunkPoints };
-    } else {
-      next = {
-        ...route,
-        branches: route.branches.map((branch) => {
-          if (branch.wireId !== wireId) return branch;
-          const key = kind === 'source' ? 'sourcePoints' : 'targetPoints';
-          const points = [...branch[key]];
-          if (index === undefined) return branch;
-          if (point) points.splice(index, insert ? 0 : 1, point);
-          else points.splice(index, 1);
-          return { ...branch, [key]: points };
-        }),
-      };
-    }
-    onUpdateHarnessRoute(harnessId, next);
+    const next = editHarnessRoutePoint(
+      route,
+      kind,
+      point,
+      index,
+      wireId,
+      insert,
+    );
+    if (next !== route) onUpdateHarnessRoute(harnessId, next);
   }
 
   function completeHarnessDraft() {
@@ -386,10 +425,43 @@ function Canvas({
       aria-label="接线画布快捷键区域"
       onDrop={onDrop}
       onDragOver={(event) => event.preventDefault()}
+      onPointerDownCapture={(event) => {
+        if (
+          !routing ||
+          event.button !== 1 ||
+          !(event.target instanceof Element) ||
+          !event.target.closest('.react-flow__edge')
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        middlePan.current = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          viewport: getViewport(),
+        };
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      }}
       onPointerMove={(event) => {
+        if (middlePan.current) {
+          if (event.pointerId !== middlePan.current.pointerId) return;
+          const { x, y, viewport } = middlePan.current;
+          void setViewport({
+            ...viewport,
+            x: viewport.x + event.clientX - x,
+            y: viewport.y + event.clientY - y,
+          });
+          return;
+        }
+        if (event.buttons & 4) return;
         if (routingHarnessId && harnessDraft && !harnessDragging) {
           const cursor = snapPointToGrid(
-            screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+            screenToFlowPosition(
+              { x: event.clientX, y: event.clientY },
+              { snapToGrid: false },
+            ),
+            GRID_SIZE / 2,
           );
           if (
             cursor.x !== harnessDraft.cursor?.x ||
@@ -404,6 +476,14 @@ function Canvas({
         if (cursor.x !== draft.cursor?.x || cursor.y !== draft.cursor?.y)
           setDraft({ ...draft, cursor });
       }}
+      onPointerUpCapture={(event) => {
+        if (event.pointerId === middlePan.current?.pointerId)
+          middlePan.current = null;
+      }}
+      onPointerCancelCapture={(event) => {
+        if (event.pointerId === middlePan.current?.pointerId)
+          middlePan.current = null;
+      }}
     >
       <ReactFlow
         nodes={nodes}
@@ -416,10 +496,11 @@ function Canvas({
         connectionMode={ConnectionMode.Loose}
         snapToGrid
         snapGrid={canvasSnapGrid}
-        panOnDrag={!routing}
+        panOnDrag={routing ? [1] : true}
         nodesDraggable={!routing}
         zoomOnDoubleClick={!routing}
         onNodeClick={(_, node) => {
+          if (routing) return;
           setMultiWireIds([]);
           onSelectWire(null);
           onSelectHarness(null);
@@ -427,7 +508,11 @@ function Canvas({
         }}
         onEdgeClick={(event, edge) => {
           setMenu(null);
-          if (routingHarnessId) return;
+          if (routing) {
+            if (event.button === 0)
+              addRoutingPoint(event.clientX, event.clientY);
+            return;
+          }
           onSelectDevice(null);
           if (edge.id.startsWith('harness:')) {
             setMultiWireIds([]);
@@ -450,6 +535,7 @@ function Canvas({
           }
         }}
         onEdgeDoubleClick={(_, edge) => {
+          if (routing) return;
           if (edge.id.startsWith('harness:')) onToggleHarness(edge.id.slice(8));
           else {
             const wire = project.wires.find((item) => item.id === edge.id);
@@ -458,6 +544,10 @@ function Canvas({
         }}
         onEdgeContextMenu={(event, edge) => {
           event.preventDefault();
+          if (routing) {
+            setMenu(null);
+            return;
+          }
           const position = menuAt(event.clientX, event.clientY);
           if (edge.id.startsWith('harness:')) {
             onSelectDevice(null);
@@ -465,10 +555,10 @@ function Canvas({
             onSelectHarness(edge.id.slice(8));
             const harnessId = edge.id.slice(8);
             const geometry = collapsedHarnessGeometry(project, harnessId);
-            const clickPoint = screenToFlowPosition({
-              x: event.clientX,
-              y: event.clientY,
-            });
+            const clickPoint = screenToFlowPosition(
+              { x: event.clientX, y: event.clientY },
+              { snapToGrid: false },
+            );
             const nearest = geometry?.paths
               .map((part) => ({
                 part,
@@ -514,7 +604,7 @@ function Canvas({
                 wireId: nearest.part.wireId,
               },
               insertIndex: nearest?.index,
-              insertPoint: snapPointToGrid(clickPoint),
+              insertPoint: snapPointToGrid(clickPoint, GRID_SIZE / 2),
             });
             return;
           }
@@ -552,22 +642,10 @@ function Canvas({
         }}
         onPaneClick={(event) => {
           setMenu(null);
-          if (routingHarnessId) {
+          if (routing) {
+            if (event.button !== 0) return;
             wrap.current?.focus();
-            const point = snapPointToGrid(
-              screenToFlowPosition({ x: event.clientX, y: event.clientY }),
-            );
-            setHarnessDraft((current) => {
-              const next = current ?? { points: [] };
-              if (!next.source) return { ...next, source: point };
-              const last = next.points.at(-1) ?? next.source;
-              if (last.x === point.x && last.y === point.y) return next;
-              return { ...next, points: [...next.points, point] };
-            });
-            return;
-          }
-          if (draft) {
-            if (event.detail < 2) addDraftPoint(event.clientX, event.clientY);
+            addRoutingPoint(event.clientX, event.clientY);
             return;
           }
           setMultiWireIds([]);
@@ -590,7 +668,7 @@ function Canvas({
         />
         <ViewportPortal>
           <CanvasRouteOverlay
-            project={project}
+            project={previewProject}
             selectedHarnessId={selectedHarnessId}
             selectedWireId={selectedWireId}
             routingHarnessId={routingHarnessId}
@@ -600,7 +678,7 @@ function Canvas({
             setHarnessDragging={setHarnessDragging}
             dragging={dragging}
             setDragging={setDragging}
-            menu={menu}
+            menu={routing ? null : menu}
             setMenu={setMenu}
             menuAt={menuAt}
             updateHarnessPoint={updateHarnessPoint}
@@ -644,7 +722,7 @@ function Canvas({
         </div>
       )}
       <CanvasContextMenu
-        menu={menu}
+        menu={routing ? null : menu}
         project={project}
         multiWireIds={multiWireIds}
         onClose={() => setMenu(null)}
