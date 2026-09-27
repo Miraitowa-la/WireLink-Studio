@@ -272,6 +272,69 @@ test('offline viewer selects canvas objects and switches harness views', () => {
   document.body.innerHTML = '';
 });
 
+test('offline viewer focuses one hop, orders related paths, and keeps folded conductors hidden', () => {
+  const project = example();
+  project.devices.push({
+    ...structuredClone(project.devices[1]),
+    id: 'third',
+    name: '第三设备',
+    position: { x: 850, y: 40 },
+  });
+  for (const id of ['BC1', 'BC2'])
+    project.wires.push({
+      id,
+      name: id,
+      source: { deviceId: 'target', terminalId: 'left' },
+      target: { deviceId: 'third', terminalId: 'left' },
+      color: '#c00',
+    });
+  const html = renderViewerHtml(project);
+  document.body.innerHTML = html.match(/<body>([\s\S]*?)<\/body>/)![1];
+  const svg = document.querySelector<SVGSVGElement>('.viewport svg')!;
+  Object.defineProperty(svg, 'clientWidth', { value: 800 });
+  Object.defineProperty(svg, 'clientHeight', { value: 600 });
+  Object.defineProperty(SVGElement.prototype, 'getBBox', {
+    value: () => ({ x: 0, y: 0, width: 100, height: 100 }),
+    configurable: true,
+  });
+  new Function(html.match(/<script>([\s\S]*?)<\/script>/)![1])();
+  const object = (kind: string, id: string) =>
+    svg.querySelector<SVGGElement>(`[data-kind="${kind}"][data-id="${id}"]`)!;
+  document
+    .querySelector<HTMLButtonElement>('[data-focus-id="source"]')!
+    .click();
+  expect(object('device', 'target').classList.contains('muted')).toBe(false);
+  expect(object('device', 'third').classList.contains('muted')).toBe(true);
+  expect(object('wire', 'BC1').classList.contains('muted')).toBe(true);
+  expect(object('wire', 'BC2').classList.contains('muted')).toBe(true);
+  expect(object('harness', 'harness').classList.contains('muted')).toBe(false);
+  expect(
+    object('wire', 'BC1').compareDocumentPosition(
+      object('harness', 'harness'),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(html).toContain('stroke:#cbd9e6!important');
+  document
+    .querySelector<HTMLButtonElement>('[data-focus-id="wire-MOSI"]')!
+    .click();
+  expect(object('wire', 'wire-MOSI').style.display).toBe('none');
+  expect(object('harness', 'harness').style.display).toBe('');
+  expect(object('harness', 'harness').classList.contains('muted')).toBe(false);
+  object('device', 'third')
+    .querySelector('rect')!
+    .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(object('device', 'source').classList.contains('muted')).toBe(true);
+  svg.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(svg.querySelectorAll('.diagram-object.muted')).toHaveLength(0);
+  expect(svg.querySelectorAll('.diagram-object.active')).toHaveLength(0);
+  expect(
+    object('wire', 'BC1').compareDocumentPosition(
+      object('harness', 'harness'),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  document.body.innerHTML = '';
+});
+
 test('collapsed harness keeps every terminal connected, including mixed sides', () => {
   const project = example();
   project.wires[1].source.terminalId = 'top';

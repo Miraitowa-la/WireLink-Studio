@@ -27,6 +27,7 @@ import {
   type DeviceFlowNode,
 } from './CanvasFlowElements';
 import { CanvasContextMenu, type CanvasMenu } from './CanvasContextMenu';
+import { relatedObjects } from './selectionFocus';
 import {
   CanvasRouteOverlay,
   type HarnessDraft,
@@ -98,6 +99,30 @@ function Canvas({
   const [harnessDraft, setHarnessDraft] = useState<HarnessDraft | null>(null);
   const [harnessDragging, setHarnessDragging] =
     useState<HarnessDragging | null>(null);
+  const focus = useMemo(
+    () =>
+      draft !== null || routingHarnessId !== null || multiWireIds.length
+        ? null
+        : relatedObjects(
+            project,
+            selectedHarnessId
+              ? { kind: 'harness', id: selectedHarnessId }
+              : selectedWireId
+                ? { kind: 'wire', id: selectedWireId }
+                : selectedDeviceId
+                  ? { kind: 'device', id: selectedDeviceId }
+                  : null,
+          ),
+    [
+      project,
+      selectedDeviceId,
+      selectedWireId,
+      selectedHarnessId,
+      draft,
+      routingHarnessId,
+      multiWireIds.length,
+    ],
+  );
   const completeHarnessDraftRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (!routingHarnessId) {
@@ -215,6 +240,9 @@ function Canvas({
         type: 'device',
         position: device.position,
         selected: selectedDeviceId === device.id,
+        className:
+          focus && !focus.devices.has(device.id) ? 'focus-muted' : undefined,
+        zIndex: focus ? (focus.devices.has(device.id) ? 4 : 3) : undefined,
         data: {
           device,
           terminalTypes: project.terminalTypes,
@@ -230,6 +258,7 @@ function Canvas({
       project.assets,
       selectedDeviceId,
       stableTerminalClick,
+      focus,
     ],
   );
   const [nodes, setNodes, onNodesChange] =
@@ -298,8 +327,16 @@ function Canvas({
         multiWireIds,
         selectedHarnessId,
         dragging,
+        focus,
       ),
-    [previewProject, selectedWireId, multiWireIds, selectedHarnessId, dragging],
+    [
+      previewProject,
+      selectedWireId,
+      multiWireIds,
+      selectedHarnessId,
+      dragging,
+      focus,
+    ],
   );
 
   function menuAt(clientX: number, clientY: number): Point {
@@ -497,6 +534,8 @@ function Canvas({
         snapToGrid
         snapGrid={canvasSnapGrid}
         panOnDrag={routing ? [1] : true}
+        elevateNodesOnSelect={!focus}
+        elevateEdgesOnSelect={!focus}
         nodesDraggable={!routing}
         zoomOnDoubleClick={!routing}
         onNodeClick={(_, node) => {

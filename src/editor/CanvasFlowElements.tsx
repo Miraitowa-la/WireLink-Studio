@@ -17,7 +17,9 @@ import type {
 } from '../model/project';
 import { deviceTerminalLayout, getDeviceSize } from './device';
 import { collapsedHarnessGeometry } from './harnessGeometry';
+import type { FocusRelations } from './selectionFocus';
 import { wirePath, type Point } from './wireGeometry';
+const mutedStroke = '#cbd9e6';
 export type DeviceFlowNode = Node<
   {
     device: DeviceInstance;
@@ -138,6 +140,8 @@ function RoutedEdge({
   targetPosition,
   data,
   label,
+  labelStyle,
+  labelBgStyle,
   style,
   interactionWidth,
 }: EdgeProps<RoutedEdge>) {
@@ -153,18 +157,22 @@ function RoutedEdge({
       labelX={geometry.label.x}
       labelY={geometry.label.y}
       label={label}
+      labelStyle={labelStyle}
+      labelBgStyle={labelBgStyle}
       style={style}
       interactionWidth={interactionWidth}
     />
   );
 }
 type HarnessEdge = Edge<
-  NonNullable<ReturnType<typeof collapsedHarnessGeometry>>,
+  NonNullable<ReturnType<typeof collapsedHarnessGeometry>> & { muted: boolean },
   'harness'
 >;
 function HarnessEdge({
   data,
   label,
+  labelStyle,
+  labelBgStyle,
   style,
   interactionWidth,
 }: EdgeProps<HarnessEdge>) {
@@ -175,7 +183,11 @@ function HarnessEdge({
         <BaseEdge
           key={index}
           path={item.path}
-          style={{ ...style, stroke: item.color, strokeWidth: 2.5 }}
+          style={{
+            ...style,
+            stroke: data.muted ? mutedStroke : item.color,
+            strokeWidth: 2.5,
+          }}
           interactionWidth={interactionWidth}
         />
       ))}
@@ -184,6 +196,8 @@ function HarnessEdge({
         labelX={data.label.x}
         labelY={data.label.y}
         label={label}
+        labelStyle={labelStyle}
+        labelBgStyle={labelBgStyle}
         style={style}
         interactionWidth={interactionWidth}
       />
@@ -198,6 +212,7 @@ export function buildCanvasEdges(
   multiWireIds: string[],
   selectedHarnessId: string | null,
   dragging: { wireId: string; pointIndex: number; point: Point } | null,
+  focus: FocusRelations | null = null,
 ): Edge[] {
   const visibleWires = project.wires.filter(
     (wire) =>
@@ -205,32 +220,38 @@ export function buildCanvasEdges(
       !project.harnesses.find((harness) => harness.id === wire.harnessId)
         ?.collapsed,
   );
-  const wireEdges = visibleWires.map((wire) => ({
-    id: wire.id,
-    source: wire.source.deviceId,
-    sourceHandle: wire.source.terminalId,
-    target: wire.target.deviceId,
-    targetHandle: wire.target.terminalId,
-    type: 'routed',
-    data: {
-      routePoints:
-        dragging?.wireId === wire.id
-          ? (wire.routePoints ?? []).map((point, index) =>
-              index === dragging.pointIndex ? dragging.point : point,
-            )
-          : (wire.routePoints ?? []),
-    },
-    interactionWidth: 16,
-    label:
-      project.viewPreferences?.showLabels === false
-        ? undefined
-        : [wire.number, wire.name].filter(Boolean).join(' · ') || undefined,
-    style: {
-      stroke: wire.color || '#64748b',
-      strokeWidth: wire.harnessId ? 2.5 : 2,
-    },
-    selected: wire.id === selectedWireId || multiWireIds.includes(wire.id),
-  }));
+  const wireEdges = visibleWires.map((wire) => {
+    const muted = !!focus && !focus.wires.has(wire.id);
+    return {
+      id: wire.id,
+      source: wire.source.deviceId,
+      sourceHandle: wire.source.terminalId,
+      target: wire.target.deviceId,
+      targetHandle: wire.target.terminalId,
+      type: 'routed',
+      data: {
+        routePoints:
+          dragging?.wireId === wire.id
+            ? (wire.routePoints ?? []).map((point, index) =>
+                index === dragging.pointIndex ? dragging.point : point,
+              )
+            : (wire.routePoints ?? []),
+      },
+      interactionWidth: 16,
+      zIndex: focus ? (muted ? 0 : 2) : undefined,
+      label:
+        project.viewPreferences?.showLabels === false
+          ? undefined
+          : [wire.number, wire.name].filter(Boolean).join(' · ') || undefined,
+      style: {
+        stroke: muted ? mutedStroke : wire.color || '#64748b',
+        strokeWidth: wire.harnessId ? 2.5 : 2,
+      },
+      labelStyle: muted ? { fill: '#8da2b5' } : undefined,
+      labelBgStyle: muted ? { fill: '#f7fafc', stroke: '#dce7ef' } : undefined,
+      selected: wire.id === selectedWireId || multiWireIds.includes(wire.id),
+    };
+  });
   const harnessEdges = project.harnesses
     .filter((harness) => harness.collapsed)
     .flatMap((harness) => {
@@ -241,6 +262,7 @@ export function buildCanvasEdges(
       const first = wires[0];
       const geometry = collapsedHarnessGeometry(project, harness.id);
       if (!geometry) return [];
+      const muted = !!focus && !focus.harnesses.has(harness.id);
       return [
         {
           id: `harness:${harness.id}`,
@@ -249,12 +271,20 @@ export function buildCanvasEdges(
           target: first.target.deviceId,
           targetHandle: first.target.terminalId,
           type: 'harness',
-          data: geometry,
+          data: { ...geometry, muted },
+          zIndex: focus ? (muted ? 0 : 2) : undefined,
           label:
             project.viewPreferences?.showLabels === false
               ? undefined
               : `${harness.number || harness.name} · ${wires.length} 芯`,
-          style: { stroke: harness.color, strokeWidth: 5 },
+          style: {
+            stroke: muted ? mutedStroke : harness.color,
+            strokeWidth: 5,
+          },
+          labelStyle: muted ? { fill: '#8da2b5' } : undefined,
+          labelBgStyle: muted
+            ? { fill: '#f7fafc', stroke: '#dce7ef' }
+            : undefined,
           selected: harness.id === selectedHarnessId,
         },
       ];

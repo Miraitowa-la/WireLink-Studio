@@ -571,6 +571,10 @@ p {
   text-align: center;
   width: 260px;
 }
+.react-flow__node.focus-muted {
+  opacity: 0.32;
+}
+
 .device-node {
   position: relative;
   outline: 1.5px solid #5c86aa;

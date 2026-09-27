@@ -426,22 +426,6 @@ export default function App() {
   }
 
   function locateWire(id: string) {
-    const wire = getProject()?.wires.find((item) => item.id === id);
-    if (
-      wire?.harnessId &&
-      getProject()?.harnesses.some(
-        (harness) => harness.id === wire.harnessId && harness.collapsed,
-      )
-    ) {
-      changeProject((current) => ({
-        ...current,
-        harnesses: current.harnesses.map((harness) =>
-          harness.id === wire.harnessId
-            ? { ...harness, collapsed: false }
-            : harness,
-        ),
-      }));
-    }
     setSelectedWireId(id);
     setSelectedId(null);
     setSelectedHarnessId(null);
@@ -672,9 +656,6 @@ export default function App() {
           updateDeviceSize={updateDeviceSize}
           onRouteHarness={setRoutingHarnessId}
           onSelectWire={(id) => {
-            const wire = project.wires.find((item) => item.id === id);
-            if (wire?.harnessId)
-              updateHarness(wire.harnessId, { collapsed: false });
             setSelectedHarnessId(null);
             setSelectedWireId(id);
           }}
