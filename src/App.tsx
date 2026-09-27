@@ -1,14 +1,10 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import DeviceCanvas, { TEMPLATE_DRAG_TYPE } from './editor/DeviceCanvas';
-import { exportDiagram, renderPrintPages } from './editor/diagramExport';
 import InspectionPanel from './editor/InspectionPanel';
 import type { ValidationIssue } from './editor/inspection';
 import { addWire } from './editor/wire';
 import {
   addDevice,
-  createDeviceTemplate,
-  createTerminalType,
   getDeviceSize,
   GRID_SIZE,
   MIN_DEVICE_HEIGHT,
@@ -27,15 +23,6 @@ import {
 } from './editor/harness';
 import { pruneAssets } from './editor/assets';
 import {
-  hasFilePicker,
-  isPickerCancel,
-  openProjectWithPicker,
-  readProjectFile,
-  saveProjectFile,
-  type ProjectFileHandle,
-} from './editor/projectFiles';
-import {
-  createEmptyProject,
   deviceTemplateSchema,
   terminalTypeSchema,
   type DeviceInstance,
@@ -43,22 +30,17 @@ import {
   type ImageAsset,
   type HarnessConnection,
   type HarnessRoute,
-  type Project,
   type TerminalType,
   type Wire,
   type WireEndpoint,
 } from './model/project';
+import { errorMessage, useProjectSession } from './useProjectSession';
+import { LibrarySidebar, type Editor } from './editor/LibrarySidebar';
+import { PropertiesPanel } from './editor/PropertiesPanel';
 
-type Editor =
-  | { kind: 'type'; value: TerminalType }
-  | { kind: 'template'; value: DeviceTemplate }
-  | { kind: 'harness-create'; wireIds: string[] };
-type Status = { kind: 'info' | 'error'; text: string } | null;
+const DeviceCanvas = lazy(() => import('./editor/DeviceCanvas'));
 
 export default function App() {
-  const [project, setProject] = useState<Project | null>(null);
-  const [projectName, setProjectName] = useState('未命名工程');
-  const [dirty, setDirty] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
   const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(
@@ -70,30 +52,47 @@ export default function App() {
     id: string;
   } | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [status, setStatus] = useState<Status>(null);
   const [printSvg, setPrintSvg] = useState('');
-  const fileHandle = useRef<ProjectFileHandle | null>(null);
-  const fileInput = useRef<HTMLInputElement | null>(null);
   const exportMenu = useRef<HTMLDetailsElement | null>(null);
-  const projectRef = useRef<Project | null>(null);
-  const savedProject = useRef<Project | null>(null);
-  const projectSession = useRef(0);
-  const history = useRef<{ past: Project[]; future: Project[] }>({
-    past: [],
-    future: [],
-  });
-  const saving = useRef(false);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty]);
-
+  const {
+    project,
+    projectName,
+    setProjectName,
+    dirty,
+    status,
+    setStatus,
+    fileInput,
+    projectRef,
+    history,
+    changeProject,
+    undo,
+    redo,
+    newProject,
+    backToWelcome,
+    openProject,
+    onFileSelected,
+    save,
+  } = useProjectSession(
+    (next) => {
+      setRoutingHarnessId(null);
+      setSelectedId((id) =>
+        next.devices.some((device) => device.id === id) ? id : null,
+      );
+      setSelectedWireId((id) =>
+        next.wires.some((wire) => wire.id === id) ? id : null,
+      );
+      setSelectedHarnessId((id) =>
+        next.harnesses.some((harness) => harness.id === id) ? id : null,
+      );
+    },
+    () => {
+      setRoutingHarnessId(null);
+      setSelectedId(null);
+      setSelectedWireId(null);
+      setSelectedHarnessId(null);
+      setFocusTarget(null);
+    },
+  );
   useEffect(() => {
     const clearPrint = () => setPrintSvg('');
     window.addEventListener('afterprint', clearPrint);
@@ -139,171 +138,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', shortcut);
   });
 
-  function changeProject(update: (current: Project) => Project) {
-    const current = projectRef.current;
-    if (!current) return;
-    const next = update(current);
-    if (next === current) return;
-    history.current.past.push(current);
-    if (history.current.past.length > 50) history.current.past.shift();
-    history.current.future = [];
-    projectRef.current = next;
-    setProject(next);
-    setDirty(next !== savedProject.current);
-    setStatus(null);
-  }
-
-  function restoreProject(next: Project) {
-    projectRef.current = next;
-    setProject(next);
-    setRoutingHarnessId(null);
-    setDirty(next !== savedProject.current);
-    setStatus(null);
-    setSelectedId((id) =>
-      next.devices.some((device) => device.id === id) ? id : null,
-    );
-    setSelectedWireId((id) =>
-      next.wires.some((wire) => wire.id === id) ? id : null,
-    );
-    setSelectedHarnessId((id) =>
-      next.harnesses.some((harness) => harness.id === id) ? id : null,
-    );
-  }
-
-  function undo() {
-    const previous = history.current.past.pop();
-    if (!previous || !projectRef.current) return;
-    history.current.future.push(projectRef.current);
-    restoreProject(previous);
-  }
-
-  function redo() {
-    const next = history.current.future.pop();
-    if (!next || !projectRef.current) return;
-    history.current.past.push(projectRef.current);
-    restoreProject(next);
-  }
-
-  function canReplaceProject() {
-    return (
-      !dirty || window.confirm('当前工程有未保存的修改，确定放弃并继续吗？')
-    );
-  }
-
-  function newProject() {
-    if (!canReplaceProject()) return;
-    const next = createEmptyProject(projectName.trim() || '未命名工程');
-    projectRef.current = next;
-    savedProject.current = null;
-    projectSession.current += 1;
-    history.current = { past: [], future: [] };
-    setProject(next);
-    setRoutingHarnessId(null);
-    fileHandle.current = null;
-    setDirty(true);
-    setSelectedId(null);
-    setSelectedWireId(null);
-    setSelectedHarnessId(null);
-    setFocusTarget(null);
-    setStatus({ kind: 'info', text: '空工程已创建，请显式保存到文件' });
-  }
-
-  function backToWelcome() {
-    if (!canReplaceProject()) return;
-    setProject(null);
-    setRoutingHarnessId(null);
-    projectRef.current = null;
-    savedProject.current = null;
-    projectSession.current += 1;
-    history.current = { past: [], future: [] };
-    fileHandle.current = null;
-    setDirty(false);
-    setSelectedId(null);
-    setSelectedWireId(null);
-    setSelectedHarnessId(null);
-    setFocusTarget(null);
-    setStatus(null);
-  }
-
-  function acceptProject(next: Project, handle: ProjectFileHandle | null) {
-    projectRef.current = next;
-    savedProject.current = next;
-    projectSession.current += 1;
-    history.current = { past: [], future: [] };
-    setProject(next);
-    setRoutingHarnessId(null);
-    setProjectName(next.name);
-    fileHandle.current = handle;
-    setDirty(false);
-    setSelectedId(null);
-    setSelectedWireId(null);
-    setSelectedHarnessId(null);
-    setFocusTarget(null);
-    setStatus({ kind: 'info', text: `已打开工程“${next.name}”` });
-  }
-
-  async function openProject() {
-    if (!canReplaceProject()) return;
-    const session = projectSession.current;
-    if (!hasFilePicker()) {
-      fileInput.current?.click();
-      return;
-    }
-    try {
-      const { project: next, handle } = await openProjectWithPicker();
-      if (projectSession.current === session) acceptProject(next, handle);
-    } catch (error) {
-      if (!isPickerCancel(error))
-        setStatus({ kind: 'error', text: errorMessage(error) });
-    }
-  }
-
-  async function onFileSelected(event: ChangeEvent<HTMLInputElement>) {
-    const session = projectSession.current;
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    try {
-      const next = await readProjectFile(file);
-      if (projectSession.current === session) acceptProject(next, null);
-    } catch (error) {
-      setStatus({ kind: 'error', text: errorMessage(error) });
-    }
-  }
-
-  async function save() {
-    const snapshot = projectRef.current;
-    if (!snapshot || saving.current) return;
-    saving.current = true;
-    const session = projectSession.current;
-    try {
-      const handle = await saveProjectFile(snapshot, fileHandle.current);
-      if (projectSession.current !== session) return;
-      fileHandle.current = handle;
-      savedProject.current = snapshot;
-      const changedDuringSave = projectRef.current !== snapshot;
-      setDirty(changedDuringSave);
-      setStatus({
-        kind: 'info',
-        text: changedDuringSave
-          ? '文件已写入，但期间产生了新修改，请再次保存'
-          : fileHandle.current
-            ? '工程已保存'
-            : '工程文件已下载',
-      });
-    } catch (error) {
-      if (projectSession.current === session && !isPickerCancel(error))
-        setStatus({ kind: 'error', text: errorMessage(error) });
-    } finally {
-      saving.current = false;
-    }
-  }
-
   async function exportCurrent(format: 'json' | 'svg' | 'png' | 'html') {
     exportMenu.current?.removeAttribute('open');
     const snapshot = projectRef.current;
     if (!snapshot) return;
     try {
+      const { exportDiagram } = await import('./editor/diagramExport');
       await exportDiagram(snapshot, format);
       setStatus({ kind: 'info', text: `${format.toUpperCase()} 文件已导出` });
     } catch (error) {
@@ -311,11 +151,12 @@ export default function App() {
     }
   }
 
-  function printCurrent() {
+  async function printCurrent() {
     exportMenu.current?.removeAttribute('open');
     const snapshot = projectRef.current;
     if (!snapshot) return;
     try {
+      const { renderPrintPages } = await import('./editor/diagramExport');
       flushSync(() => setPrintSvg(renderPrintPages(snapshot)));
       window.print();
       setStatus({
@@ -639,17 +480,6 @@ export default function App() {
     setFocusTarget({ kind: 'wire', id });
   }
 
-  const currentTypes = project?.terminalTypes ?? [];
-  const currentTemplates = project?.deviceLibrary ?? [];
-  const selectedDevice = project?.devices.find(
-    (device) => device.id === selectedId,
-  );
-  const selectedWire = project?.wires.find(
-    (wire) => wire.id === selectedWireId,
-  );
-  const selectedHarness = project?.harnesses.find(
-    (harness) => harness.id === selectedHarnessId,
-  );
   const fileInputElement = (
     <input
       ref={fileInput}
@@ -793,176 +623,20 @@ export default function App() {
       </header>
 
       <div className="workspace">
-        <aside className="sidebar" aria-label="资料库">
-          <div className="sidebar-heading">
-            <h2>资料库</h2>
-            <p>端子类型与设备模板</p>
-          </div>
-          <section className="library-section">
-            <div className="section-heading">
-              <h3>端子类型</h3>
-              <button
-                type="button"
-                onClick={() =>
-                  setEditor({
-                    kind: 'type',
-                    value: createTerminalType(),
-                  })
-                }
-              >
-                新增
-              </button>
-            </div>
-            {currentTypes.length === 0 && (
-              <p className="empty-hint">尚无端子类型</p>
-            )}
-            {currentTypes.map((type) => (
-              <div key={type.id} className="library-item">
-                <span
-                  className="color-dot"
-                  style={{ backgroundColor: type.color }}
-                />
-                <span className="library-item-name" title={type.name}>
-                  {type.name}
-                </span>
-                <button
-                  type="button"
-                  aria-label={`编辑端子类型 ${type.name}`}
-                  onClick={() => setEditor({ kind: 'type', value: type })}
-                >
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  className="danger-text"
-                  aria-label={`删除端子类型 ${type.name}`}
-                  onClick={() => deleteType(type)}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </section>
-          <section className="library-section">
-            <div className="section-heading">
-              <h3>设备模板</h3>
-              <button
-                type="button"
-                onClick={() =>
-                  setEditor({
-                    kind: 'template',
-                    value: createDeviceTemplate(),
-                  })
-                }
-              >
-                新增
-              </button>
-            </div>
-            {currentTemplates.length === 0 && (
-              <p className="empty-hint">尚无设备模板</p>
-            )}
-            {currentTemplates.map((template) => (
-              <div
-                key={template.id}
-                className="template-item"
-                draggable
-                onDragStart={(event) =>
-                  event.dataTransfer.setData(TEMPLATE_DRAG_TYPE, template.id)
-                }
-              >
-                <div>
-                  <strong>{template.name}</strong>
-                  <small>
-                    {template.category || '未分类'} ·{' '}
-                    {template.terminals.length} 个端子
-                  </small>
-                </div>
-                <div className="template-actions">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditor({
-                        kind: 'template',
-                        value: template,
-                      })
-                    }
-                  >
-                    编辑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => placeDevice(template.id)}
-                  >
-                    放入画布
-                  </button>
-                  <button
-                    type="button"
-                    className="danger-text"
-                    aria-label={`删除模板 ${template.name}`}
-                    onClick={() => deleteTemplate(template)}
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-            ))}
-          </section>
-          {project.harnesses.length > 0 && (
-            <section className="library-section">
-              <div className="section-heading">
-                <h3>画布线束</h3>
-              </div>
-              <div className="canvas-harness-list">
-                {project.harnesses.map((harness) => (
-                  <button
-                    key={harness.id}
-                    type="button"
-                    className={`canvas-harness-item${selectedHarnessId === harness.id ? ' is-selected' : ''}`}
-                    aria-current={
-                      selectedHarnessId === harness.id ? 'true' : undefined
-                    }
-                    title={`${harness.number || harness.name} · ${!harness.route ? '待走线' : harness.collapsed ? '已折叠' : '已展开'}`}
-                    onClick={() => {
-                      setSelectedId(null);
-                      setSelectedWireId(null);
-                      setSelectedHarnessId(harness.id);
-                      setFocusTarget(null);
-                    }}
-                  >
-                    <span
-                      className="color-dot"
-                      style={{
-                        backgroundColor: harness.color,
-                      }}
-                    />
-                    <span className="canvas-harness-copy">
-                      <strong>{harness.number || harness.name}</strong>
-                      <small>
-                        {harness.number && harness.name !== harness.number
-                          ? `${harness.name} · `
-                          : ''}
-                        {
-                          project.wires.filter(
-                            (wire) => wire.harnessId === harness.id,
-                          ).length
-                        }{' '}
-                        芯
-                      </small>
-                    </span>
-                    <span className="canvas-harness-state">
-                      {!harness.route
-                        ? '待走线'
-                        : harness.collapsed
-                          ? '已折叠'
-                          : '已展开'}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-        </aside>
-
+        <LibrarySidebar
+          project={project}
+          selectedHarnessId={selectedHarnessId}
+          setEditor={setEditor}
+          deleteType={deleteType}
+          deleteTemplate={deleteTemplate}
+          placeDevice={placeDevice}
+          onSelectHarness={(id) => {
+            setSelectedId(null);
+            setSelectedWireId(null);
+            setSelectedHarnessId(id);
+            setFocusTarget(null);
+          }}
+        />
         <section className="canvas-panel" aria-label="接线画布">
           <div className="canvas-heading">
             <span>接线画布</span>
@@ -972,391 +646,93 @@ export default function App() {
             </span>
             <span className="hint">Ctrl + 点击导线多选，右键创建线束</span>
           </div>
-          <DeviceCanvas
-            project={project}
-            selectedDeviceId={selectedId}
-            selectedWireId={selectedWireId}
-            selectedHarnessId={selectedHarnessId}
-            routingHarnessId={routingHarnessId}
-            onCreateHarness={startHarnessCreation}
-            onCompleteHarnessRoute={finishHarnessRoute}
-            onCancelHarnessRoute={() => setRoutingHarnessId(null)}
-            onUpdateHarnessRoute={(id, route) => updateHarness(id, { route })}
-            focusTarget={focusTarget}
-            onSelectDevice={(id) => {
-              setSelectedId(id);
-              setFocusTarget(null);
-            }}
-            onSelectWire={(id) => {
-              setSelectedWireId(id);
-              setFocusTarget(null);
-            }}
-            onSelectHarness={(id) => {
-              setSelectedHarnessId(id);
-              setFocusTarget(null);
-            }}
-            onToggleHarness={(id) => {
-              const harness = project.harnesses.find((item) => item.id === id);
-              if (harness?.route)
-                updateHarness(id, { collapsed: !harness.collapsed });
-              else setRoutingHarnessId(id);
-            }}
-            onConnect={connectTerminals}
-            onUpdateWireRoute={(id, routePoints) =>
-              updateWire(id, { routePoints })
-            }
-            onDeleteWire={deleteWire}
-            onAddDevice={placeDevice}
-            onMoveDevice={(id, position) =>
-              updateDevice(id, { position: snapPointToGrid(position) })
-            }
-          />
+          <Suspense
+            fallback={<div className="canvas-empty">正在加载画布…</div>}
+          >
+            <DeviceCanvas
+              project={project}
+              selectedDeviceId={selectedId}
+              selectedWireId={selectedWireId}
+              selectedHarnessId={selectedHarnessId}
+              routingHarnessId={routingHarnessId}
+              onCreateHarness={startHarnessCreation}
+              onCompleteHarnessRoute={finishHarnessRoute}
+              onCancelHarnessRoute={() => setRoutingHarnessId(null)}
+              onUpdateHarnessRoute={(id, route) => updateHarness(id, { route })}
+              focusTarget={focusTarget}
+              onSelectDevice={(id) => {
+                setSelectedId(id);
+                setFocusTarget(null);
+              }}
+              onSelectWire={(id) => {
+                setSelectedWireId(id);
+                setFocusTarget(null);
+              }}
+              onSelectHarness={(id) => {
+                setSelectedHarnessId(id);
+                setFocusTarget(null);
+              }}
+              onToggleHarness={(id) => {
+                const harness = project.harnesses.find(
+                  (item) => item.id === id,
+                );
+                if (harness?.route)
+                  updateHarness(id, { collapsed: !harness.collapsed });
+                else setRoutingHarnessId(id);
+              }}
+              onConnect={connectTerminals}
+              onUpdateWireRoute={(id, routePoints) =>
+                updateWire(id, { routePoints })
+              }
+              onDeleteWire={deleteWire}
+              onAddDevice={placeDevice}
+              onMoveDevice={(id, position) =>
+                updateDevice(id, { position: snapPointToGrid(position) })
+              }
+            />
+          </Suspense>
         </section>
-
-        <aside className="properties" aria-label="属性面板">
-          <div className="sidebar-heading">
-            <h2>属性</h2>
-            <p>
-              {selectedHarness
-                ? '线束'
-                : selectedWire
-                  ? '普通导线'
-                  : selectedDevice
-                    ? '设备实例'
-                    : '选择画布中的设备、导线或线束'}
-            </p>
-          </div>
-          {selectedHarness ? (
-            <div className="properties-body">
-              <p className="hint">
-                线束 ·{' '}
-                {
-                  project.wires.filter(
-                    (wire) => wire.harnessId === selectedHarness.id,
-                  ).length
-                }{' '}
-                芯
-              </p>
-              <label>
-                名称
-                <input
-                  value={selectedHarness.name}
-                  onChange={(event) =>
-                    updateHarness(selectedHarness.id, {
-                      name: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                编号
-                <input
-                  value={selectedHarness.number ?? ''}
-                  onChange={(event) =>
-                    updateHarness(selectedHarness.id, {
-                      number: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                线缆型号
-                <input
-                  value={selectedHarness.cableModel ?? ''}
-                  onChange={(event) =>
-                    updateHarness(selectedHarness.id, {
-                      cableModel: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={selectedHarness.shielded ?? false}
-                  onChange={(event) =>
-                    updateHarness(selectedHarness.id, {
-                      shielded: event.target.checked,
-                    })
-                  }
-                />
-                屏蔽线缆
-              </label>
-              <label>
-                备注
-                <textarea
-                  rows={3}
-                  value={selectedHarness.note ?? ''}
-                  onChange={(event) =>
-                    updateHarness(selectedHarness.id, {
-                      note: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                线束颜色
-                <input
-                  type="color"
-                  value={selectedHarness.color}
-                  onChange={(event) =>
-                    updateHarness(selectedHarness.id, {
-                      color: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() =>
-                  selectedHarness.route
-                    ? updateHarness(selectedHarness.id, {
-                        collapsed: !selectedHarness.collapsed,
-                      })
-                    : setRoutingHarnessId(selectedHarness.id)
-                }
-              >
-                {selectedHarness.route
-                  ? selectedHarness.collapsed
-                    ? '展开芯线'
-                    : '折叠线束'
-                  : '线束走线'}
-              </button>
-              {selectedHarness.route && (
-                <button
-                  type="button"
-                  onClick={() => setRoutingHarnessId(selectedHarness.id)}
-                >
-                  重新走线
-                </button>
-              )}
-              <h3>芯线</h3>
-              {project.wires
-                .filter((wire) => wire.harnessId === selectedHarness.id)
-                .map((wire) => (
-                  <button
-                    key={wire.id}
-                    type="button"
-                    className="table-link"
-                    onClick={() => {
-                      updateHarness(selectedHarness.id, { collapsed: false });
-                      setSelectedHarnessId(null);
-                      setSelectedWireId(wire.id);
-                    }}
-                  >
-                    {wire.name || wire.number || '未命名导线'}
-                  </button>
-                ))}
-              <button
-                type="button"
-                className="danger-text"
-                onClick={deleteSelectedHarness}
-              >
-                解除线束分组
-              </button>
-            </div>
-          ) : selectedWire ? (
-            <div className="properties-body">
-              <p className="hint">
-                {
-                  project.devices.find(
-                    (device) => device.id === selectedWire.source.deviceId,
-                  )?.name
-                }
-                {' → '}
-                {
-                  project.devices.find(
-                    (device) => device.id === selectedWire.target.deviceId,
-                  )?.name
-                }
-              </p>
-              <label>
-                线号
-                <input
-                  value={selectedWire.number ?? ''}
-                  onChange={(event) =>
-                    updateWire(selectedWire.id, { number: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                名称
-                <input
-                  value={selectedWire.name ?? ''}
-                  onChange={(event) =>
-                    updateWire(selectedWire.id, { name: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                颜色
-                <input
-                  type="color"
-                  value={selectedWire.color ?? '#64748b'}
-                  onChange={(event) =>
-                    updateWire(selectedWire.id, { color: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                备注
-                <textarea
-                  rows={4}
-                  value={selectedWire.note ?? ''}
-                  onChange={(event) =>
-                    updateWire(selectedWire.id, { note: event.target.value })
-                  }
-                />
-              </label>
-              {selectedWire.harnessId && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedWireId(null);
-                    setSelectedHarnessId(selectedWire.harnessId!);
-                  }}
-                >
-                  选择所属线束：
-                  {project.harnesses.find(
-                    (item) => item.id === selectedWire.harnessId,
-                  )?.name ?? '未知'}
-                </button>
-              )}
-              <button
-                type="button"
-                className="danger-text"
-                onClick={deleteSelectedWire}
-              >
-                删除导线
-              </button>
-            </div>
-          ) : selectedDevice ? (
-            <div className="properties-body">
-              <label>
-                实例名称
-                <input
-                  value={selectedDevice.name}
-                  onChange={(event) =>
-                    updateDevice(selectedDevice.id, {
-                      name: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                备注
-                <textarea
-                  rows={4}
-                  value={selectedDevice.note ?? ''}
-                  onChange={(event) =>
-                    updateDevice(selectedDevice.id, {
-                      note: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <div className="form-grid">
-                <label>
-                  宽度（每格 30）
-                  <input
-                    key={`${selectedDevice.id}:width:${getDeviceSize(selectedDevice).width}`}
-                    type="number"
-                    min={MIN_DEVICE_WIDTH}
-                    step={GRID_SIZE}
-                    defaultValue={getDeviceSize(selectedDevice).width}
-                    onBlur={(event) =>
-                      updateDeviceSize(
-                        selectedDevice,
-                        'width',
-                        Number(event.currentTarget.value),
-                        event.currentTarget,
-                      )
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') event.currentTarget.blur();
-                    }}
-                  />
-                </label>
-                <label>
-                  高度（每格 30）
-                  <input
-                    key={`${selectedDevice.id}:height:${getDeviceSize(selectedDevice).height}`}
-                    type="number"
-                    min={MIN_DEVICE_HEIGHT}
-                    step={GRID_SIZE}
-                    defaultValue={getDeviceSize(selectedDevice).height}
-                    onBlur={(event) =>
-                      updateDeviceSize(
-                        selectedDevice,
-                        'height',
-                        Number(event.currentTarget.value),
-                        event.currentTarget,
-                      )
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') event.currentTarget.blur();
-                    }}
-                  />
-                </label>
-              </div>
-              <p className="hint">
-                位置：{Math.round(selectedDevice.position.x)},{' '}
-                {Math.round(selectedDevice.position.y)} · 模板快照：
-                {selectedDevice.templateSnapshot.name}
-              </p>
-              <h3>端子</h3>
-              {selectedDevice.templateSnapshot.terminals.length === 0 ? (
-                <p className="empty-hint">这个设备没有端子</p>
-              ) : (
-                selectedDevice.templateSnapshot.terminals.map((terminal) => (
-                  <div key={terminal.id} className="property-terminal">
-                    <span>{terminal.label}</span>
-                    <small>
-                      {terminal.side} ·{' '}
-                      {project.terminalTypes.find(
-                        (type) => type.id === terminal.typeId,
-                      )?.name ?? terminal.typeId}
-                    </small>
-                  </div>
-                ))
-              )}
-              <div className="property-actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const copy = {
-                      ...structuredClone(selectedDevice),
-                      id: crypto.randomUUID(),
-                      name: `${selectedDevice.name} 副本`,
-                      position: {
-                        x: selectedDevice.position.x + GRID_SIZE * 2,
-                        y: selectedDevice.position.y + GRID_SIZE * 2,
-                      },
-                    };
-                    changeProject((current) => ({
-                      ...current,
-                      devices: [...current.devices, copy],
-                    }));
-                    setSelectedId(copy.id);
-                  }}
-                >
-                  复制设备
-                </button>
-                <button
-                  type="button"
-                  className="danger-text"
-                  onClick={deleteSelectedDevice}
-                >
-                  删除设备
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="empty-hint properties-placeholder">
-              点击端子开始手动走线；点击设备、导线或线束以编辑属性。
-            </p>
-          )}
-        </aside>
+        <PropertiesPanel
+          project={project}
+          selectedId={selectedId}
+          selectedWireId={selectedWireId}
+          selectedHarnessId={selectedHarnessId}
+          updateHarness={updateHarness}
+          updateWire={updateWire}
+          updateDevice={updateDevice}
+          updateDeviceSize={updateDeviceSize}
+          onRouteHarness={setRoutingHarnessId}
+          onSelectWire={(id) => {
+            const wire = project.wires.find((item) => item.id === id);
+            if (wire?.harnessId)
+              updateHarness(wire.harnessId, { collapsed: false });
+            setSelectedHarnessId(null);
+            setSelectedWireId(id);
+          }}
+          onSelectHarness={(id) => {
+            setSelectedWireId(null);
+            setSelectedHarnessId(id);
+          }}
+          onDuplicateDevice={(device) => {
+            const copy = {
+              ...structuredClone(device),
+              id: crypto.randomUUID(),
+              name: `${device.name} 副本`,
+              position: {
+                x: device.position.x + GRID_SIZE * 2,
+                y: device.position.y + GRID_SIZE * 2,
+              },
+            };
+            changeProject((current) => ({
+              ...current,
+              devices: [...current.devices, copy],
+            }));
+            setSelectedId(copy.id);
+          }}
+          deleteSelectedHarness={deleteSelectedHarness}
+          deleteSelectedWire={deleteSelectedWire}
+          deleteSelectedDevice={deleteSelectedDevice}
+        />{' '}
       </div>
       <InspectionPanel
         project={project}
@@ -1416,8 +792,4 @@ function upsert<T extends { id: string }>(items: T[], value: T): T[] {
   return items.some((item) => item.id === value.id)
     ? items.map((item) => (item.id === value.id ? value : item))
     : [...items, value];
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : '操作失败，请重试';
 }

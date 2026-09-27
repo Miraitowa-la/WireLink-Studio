@@ -1,5 +1,5 @@
 import type { DeviceInstance, Project, Wire } from '../model/project';
-import { getDeviceSize, SIDES, terminalOffset } from './device';
+import { deviceTerminalLayout, getDeviceSize } from './device';
 import { serializeProjectFile } from '../model/project';
 import { safeProjectName } from './projectFiles';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
@@ -74,24 +74,8 @@ function deviceSvg(
     Math.max(70, device.name.length * 14 + 22),
   );
   const labelMarkup = `<rect x="${n(centerX - labelBgWidth / 2)}" y="${n(centerY - (category ? 25 : 15))}" width="${n(labelBgWidth)}" height="${category ? 48 : 30}" rx="5" fill="#ffffffde"/><text x="${n(centerX)}" y="${n(centerY + (category ? -2 : 5))}" text-anchor="middle" font-size="16" font-weight="700" fill="#17334f">${text(device.name, 19)}</text>${category ? `<text x="${n(centerX)}" y="${n(centerY + 16)}" text-anchor="middle" font-size="11" fill="#627b92">${text(category, 22)}</text>` : ''}`;
-  const terminals = SIDES.flatMap((side) => {
-    const onSide = device.templateSnapshot.terminals
-      .filter((terminal) => terminal.side === side)
-      .sort((a, b) => a.order - b.order);
-    return onSide.map((terminal, order) => {
-      const offset = terminalOffset(
-        side === 'top' || side === 'bottom' ? width : height,
-        onSide.length,
-        order,
-      );
-      const point =
-        side === 'top'
-          ? { x: x + offset, y }
-          : side === 'bottom'
-            ? { x: x + offset, y: y + height }
-            : side === 'left'
-              ? { x, y: y + offset }
-              : { x: x + width, y: y + offset };
+  const terminals = deviceTerminalLayout(device)
+    .map(({ terminal, side, count, point }) => {
       const type = project.terminalTypes.find(
         (item) => item.id === terminal.typeId,
       );
@@ -106,14 +90,10 @@ function deviceSvg(
       const anchor =
         side === 'left' ? 'start' : side === 'right' ? 'end' : 'middle';
       const labelLimit =
-        side === 'top' || side === 'bottom'
-          ? onSide.length === 1
-            ? 11
-            : 5
-          : 9;
+        side === 'top' || side === 'bottom' ? (count === 1 ? 11 : 5) : 9;
       return `<circle cx="${n(point.x)}" cy="${n(point.y)}" r="5.5" fill="${escapeXml(type?.color ?? '#64748b')}" stroke="#fff" stroke-width="2"/><text x="${n(labelX)}" y="${n(labelY)}" text-anchor="${anchor}" font-size="10" font-weight="600" fill="#526b83">${text(terminal.label, labelLimit)}</text>`;
-    });
-  }).join('');
+    })
+    .join('');
   return `<g class="diagram-object" data-kind="device" data-id="${escapeXml(device.id)}"><title>${text(device.name)}</title><rect x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" rx="10" fill="#fff" stroke="#5c86aa" stroke-width="2"/>${imageMarkup}${labelMarkup}${terminals}</g>`;
 }
 

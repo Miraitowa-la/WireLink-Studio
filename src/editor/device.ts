@@ -9,6 +9,7 @@ import type {
 
 export const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
 export const GRID_SIZE = 30;
+export const TEMPLATE_DRAG_TYPE = 'application/wirelink-device-template';
 export const MIN_DEVICE_WIDTH = 180;
 export const MIN_DEVICE_HEIGHT = 120;
 
@@ -29,6 +30,31 @@ export const terminalOffset = (
   Math.floor((sideLength - (count - 1) * GRID_SIZE) / (2 * GRID_SIZE)) *
     GRID_SIZE +
   index * GRID_SIZE;
+export function deviceTerminalLayout(device: DeviceInstance) {
+  const { width, height } = getDeviceSize(device);
+  const { x, y } = device.position;
+  return SIDES.flatMap((side) => {
+    const terminals = device.templateSnapshot.terminals
+      .filter((terminal) => terminal.side === side)
+      .sort((a, b) => a.order - b.order);
+    return terminals.map((terminal, index) => {
+      const offset = terminalOffset(
+        side === 'top' || side === 'bottom' ? width : height,
+        terminals.length,
+        index,
+      );
+      const point =
+        side === 'top'
+          ? { x: x + offset, y }
+          : side === 'bottom'
+            ? { x: x + offset, y: y + height }
+            : side === 'left'
+              ? { x, y: y + offset }
+              : { x: x + width, y: y + offset };
+      return { terminal, side, count: terminals.length, offset, point };
+    });
+  });
+}
 export const SIDE_LABELS: Record<Side, string> = {
   top: '上边',
   right: '右边',

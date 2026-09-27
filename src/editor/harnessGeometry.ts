@@ -1,5 +1,5 @@
 import type { Project, WireEndpoint } from '../model/project';
-import { getDeviceSize, terminalOffset } from './device';
+import { deviceTerminalLayout } from './device';
 import { wirePath, type Point } from './wireGeometry';
 
 export function terminalPoint(
@@ -7,30 +7,11 @@ export function terminalPoint(
   endpoint: WireEndpoint,
 ): Point | null {
   const device = project.devices.find((item) => item.id === endpoint.deviceId);
-  const terminal = device?.templateSnapshot.terminals.find(
-    (item) => item.id === endpoint.terminalId,
-  );
-  if (!device || !terminal) return null;
-  const sameSide = device.templateSnapshot.terminals
-    .filter((item) => item.side === terminal.side)
-    .sort((a, b) => a.order - b.order);
-  const { width, height } = getDeviceSize(device);
-  const { x, y } = device.position;
-  const offset = terminalOffset(
-    terminal.side === 'top' || terminal.side === 'bottom' ? width : height,
-    sameSide.length,
-    sameSide.findIndex((item) => item.id === terminal.id),
-  );
-  switch (terminal.side) {
-    case 'top':
-      return { x: x + offset, y };
-    case 'bottom':
-      return { x: x + offset, y: y + height };
-    case 'left':
-      return { x, y: y + offset };
-    case 'right':
-      return { x: x + width, y: y + offset };
-  }
+  return device
+    ? (deviceTerminalLayout(device).find(
+        ({ terminal }) => terminal.id === endpoint.terminalId,
+      )?.point ?? null)
+    : null;
 }
 
 export function collapsedHarnessGeometry(project: Project, harnessId: string) {

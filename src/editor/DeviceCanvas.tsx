@@ -1,246 +1,40 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   Background,
-  BaseEdge,
   ConnectionMode,
   Controls,
-  Handle,
   MiniMap,
-  Position,
   ReactFlow,
   ReactFlowProvider,
   ViewportPortal,
   useNodesState,
   useReactFlow,
-  type Edge,
-  type EdgeProps,
-  type Node,
-  type NodeProps,
 } from '@xyflow/react';
-import type {
-  DeviceInstance,
-  HarnessRoute,
-  ImageAsset,
-  Project,
-  Side,
-  TerminalType,
-  WireEndpoint,
-} from '../model/project';
+import type { HarnessRoute, Project, WireEndpoint } from '../model/project';
 import {
   getDeviceSize,
   GRID_SIZE,
-  SIDES,
   snapPointToGrid,
-  terminalOffset,
+  TEMPLATE_DRAG_TYPE,
 } from './device';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
 import { insertionIndex, wirePath, type Point } from './wireGeometry';
+import {
+  buildCanvasEdges,
+  edgeTypes,
+  nodeTypes,
+  type DeviceFlowNode,
+} from './CanvasFlowElements';
+import { CanvasContextMenu, type CanvasMenu } from './CanvasContextMenu';
+import {
+  CanvasRouteOverlay,
+  type HarnessDraft,
+  type HarnessDragging,
+  type WireDraft,
+  type WireDragging,
+} from './CanvasRouteOverlay';
 
-export const TEMPLATE_DRAG_TYPE = 'application/wirelink-device-template';
-
-type DeviceFlowNode = Node<
-  {
-    device: DeviceInstance;
-    terminalTypes: TerminalType[];
-    imageAsset?: ImageAsset;
-    onTerminalClick: (endpoint: WireEndpoint) => void;
-  },
-  'device'
->;
-
-const positions: Record<Side, Position> = {
-  top: Position.Top,
-  right: Position.Right,
-  bottom: Position.Bottom,
-  left: Position.Left,
-};
-
-function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
-  const { device, terminalTypes, imageAsset, onTerminalClick } = data;
-  const { width, height } = getDeviceSize(device);
-  const terminals = device.templateSnapshot.terminals;
-  const colors = new Map(terminalTypes.map((type) => [type.id, type.color]));
-
-  return (
-    <div
-      className={`device-node${selected ? ' device-node-selected' : ''}`}
-      style={{ width, height }}
-    >
-      {device.templateSnapshot.appearance.kind === 'image' && imageAsset && (
-        <img
-          className="device-node-image"
-          src={imageAsset.data}
-          alt=""
-          style={{
-            objectFit: device.templateSnapshot.appearance.imageFit ?? 'contain',
-          }}
-        />
-      )}
-      <div className="device-node-center">
-        <strong>{device.name}</strong>
-        {device.templateSnapshot.category && (
-          <small>{device.templateSnapshot.category}</small>
-        )}
-      </div>
-      {SIDES.flatMap((side) => {
-        const onSide = terminals
-          .filter((terminal) => terminal.side === side)
-          .sort((a, b) => a.order - b.order);
-        return onSide.map((terminal, index) => {
-          const offset = terminalOffset(
-            side === 'top' || side === 'bottom' ? width : height,
-            onSide.length,
-            index,
-          );
-          const style =
-            side === 'top' || side === 'bottom'
-              ? { left: offset }
-              : { top: offset };
-          return (
-            <div key={terminal.id}>
-              <Handle
-                type="source"
-                id={terminal.id}
-                position={positions[side]}
-                isConnectable={false}
-                isConnectableStart={false}
-                isConnectableEnd={false}
-                className="terminal-handle"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onTerminalClick({
-                    deviceId: device.id,
-                    terminalId: terminal.id,
-                  });
-                }}
-                style={{
-                  ...style,
-                  backgroundColor: colors.get(terminal.typeId) ?? '#64748b',
-                }}
-                title={`${terminal.label} · ${terminalTypes.find((type) => type.id === terminal.typeId)?.name ?? terminal.typeId}`}
-              />
-              <span
-                className={`terminal-label terminal-label-${side}`}
-                style={{
-                  ...style,
-                  ...((side === 'top' || side === 'bottom') &&
-                  onSide.length === 1
-                    ? { maxWidth: 66 }
-                    : {}),
-                }}
-                title={terminal.label}
-              >
-                {terminal.label}
-              </span>
-            </div>
-          );
-        });
-      })}
-    </div>
-  );
-}
-
-const nodeTypes = { device: DeviceNode };
 const canvasSnapGrid: [number, number] = [GRID_SIZE, GRID_SIZE];
-// React Flow supplies the outer edge of the 10px handle; wires use its center.
-const terminalHandleRadius = 5;
-const handleCenter = (point: Point, side: Position): Point => ({
-  x:
-    point.x +
-    (side === Position.Left
-      ? terminalHandleRadius
-      : side === Position.Right
-        ? -terminalHandleRadius
-        : 0),
-  y:
-    point.y +
-    (side === Position.Top
-      ? terminalHandleRadius
-      : side === Position.Bottom
-        ? -terminalHandleRadius
-        : 0),
-});
-type Draft = {
-  source: WireEndpoint;
-  points: Point[];
-  cursor: Point | null;
-};
-type CanvasMenu = {
-  x: number;
-  y: number;
-  wireId?: string;
-  harnessId?: string;
-  harnessPart?: { kind: 'trunk' | 'source' | 'target'; wireId?: string };
-  pointIndex?: number;
-  insertIndex?: number;
-  insertPoint?: Point;
-  canInsert?: boolean;
-};
-
-type RoutedEdge = Edge<{ routePoints: Point[] }, 'routed'>;
-
-function RoutedEdge({
-  sourceX,
-  sourceY,
-  sourcePosition,
-  targetX,
-  targetY,
-  targetPosition,
-  data,
-  label,
-  style,
-  interactionWidth,
-}: EdgeProps<RoutedEdge>) {
-  if (!data) return null;
-  const geometry = wirePath(
-    handleCenter({ x: sourceX, y: sourceY }, sourcePosition),
-    handleCenter({ x: targetX, y: targetY }, targetPosition),
-    data.routePoints,
-  );
-  return (
-    <BaseEdge
-      path={geometry.path}
-      labelX={geometry.label.x}
-      labelY={geometry.label.y}
-      label={label}
-      style={style}
-      interactionWidth={interactionWidth}
-    />
-  );
-}
-type HarnessEdge = Edge<
-  NonNullable<ReturnType<typeof collapsedHarnessGeometry>>,
-  'harness'
->;
-function HarnessEdge({
-  data,
-  label,
-  style,
-  interactionWidth,
-}: EdgeProps<HarnessEdge>) {
-  if (!data) return null;
-  return (
-    <>
-      {data.paths.slice(1).map((item, index) => (
-        <BaseEdge
-          key={index}
-          path={item.path}
-          style={{ ...style, stroke: item.color, strokeWidth: 2.5 }}
-          interactionWidth={interactionWidth}
-        />
-      ))}
-      <BaseEdge
-        path={data.trunk}
-        labelX={data.label.x}
-        labelY={data.label.y}
-        label={label}
-        style={style}
-        interactionWidth={interactionWidth}
-      />
-    </>
-  );
-}
-const edgeTypes = { routed: RoutedEdge, harness: HarnessEdge };
 
 interface CanvasProps {
   project: Project;
@@ -291,19 +85,11 @@ function Canvas({
 }: CanvasProps) {
   const { screenToFlowPosition, fitView, setCenter } = useReactFlow();
   const wrap = useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<WireDraft | null>(null);
   const [multiWireIds, setMultiWireIds] = useState<string[]>([]);
-  const [harnessDraft, setHarnessDraft] = useState<{
-    source?: Point;
-    target?: Point;
-    trunkPoints: Point[];
-    cursor?: Point;
-  } | null>(null);
-  const [harnessDragging, setHarnessDragging] = useState<{
-    kind: 'sourceJunction' | 'targetJunction' | 'trunk' | 'source' | 'target';
-    wireId?: string;
-    index?: number;
-  } | null>(null);
+  const [harnessDraft, setHarnessDraft] = useState<HarnessDraft | null>(null);
+  const [harnessDragging, setHarnessDragging] =
+    useState<HarnessDragging | null>(null);
   useEffect(() => {
     if (!routingHarnessId) {
       setHarnessDraft(null);
@@ -333,11 +119,7 @@ function Canvas({
     [project.wires],
   );
   const [menu, setMenu] = useState<CanvasMenu | null>(null);
-  const [dragging, setDragging] = useState<{
-    wireId: string;
-    pointIndex: number;
-    point: Point;
-  } | null>(null);
+  const [dragging, setDragging] = useState<WireDragging | null>(null);
   const terminalClickRef = useRef<(endpoint: WireEndpoint) => void>(() => {});
   const stableTerminalClick = useRef((endpoint: WireEndpoint) =>
     terminalClickRef.current(endpoint),
@@ -459,95 +241,17 @@ function Canvas({
     }
     if (point) void setCenter(point.x, point.y, { zoom: 1, duration: 200 });
   }, [focusTarget, setCenter]);
-  const edges = useMemo<Edge[]>(() => {
-    const visibleWires = project.wires.filter(
-      (wire) =>
-        !wire.harnessId ||
-        !project.harnesses.find((harness) => harness.id === wire.harnessId)
-          ?.collapsed,
-    );
-    const wireEdges = visibleWires.map((wire) => ({
-      id: wire.id,
-      source: wire.source.deviceId,
-      sourceHandle: wire.source.terminalId,
-      target: wire.target.deviceId,
-      targetHandle: wire.target.terminalId,
-      type: 'routed',
-      data: {
-        routePoints:
-          dragging?.wireId === wire.id
-            ? (wire.routePoints ?? []).map((point, index) =>
-                index === dragging.pointIndex ? dragging.point : point,
-              )
-            : (wire.routePoints ?? []),
-      },
-      interactionWidth: 16,
-      label:
-        project.viewPreferences?.showLabels === false
-          ? undefined
-          : [wire.number, wire.name].filter(Boolean).join(' · ') || undefined,
-      style: {
-        stroke: wire.color || '#64748b',
-        strokeWidth: wire.harnessId ? 2.5 : 2,
-      },
-      selected: wire.id === selectedWireId || multiWireIds.includes(wire.id),
-    }));
-    const harnessEdges = project.harnesses
-      .filter((harness) => harness.collapsed)
-      .flatMap((harness) => {
-        const wires = project.wires.filter(
-          (wire) => wire.harnessId === harness.id,
-        );
-        if (!wires.length) return [];
-        const first = wires[0];
-        const geometry = collapsedHarnessGeometry(project, harness.id);
-        if (!geometry) return [];
-        return [
-          {
-            id: `harness:${harness.id}`,
-            source: first.source.deviceId,
-            sourceHandle: first.source.terminalId,
-            target: first.target.deviceId,
-            targetHandle: first.target.terminalId,
-            type: 'harness',
-            data: geometry,
-            label:
-              project.viewPreferences?.showLabels === false
-                ? undefined
-                : `${harness.number || harness.name} · ${wires.length} 芯`,
-            style: { stroke: harness.color, strokeWidth: 5 },
-            selected: harness.id === selectedHarnessId,
-          },
-        ];
-      });
-    return [...wireEdges, ...harnessEdges];
-  }, [
-    project.wires,
-    project.harnesses,
-    project.devices,
-    project.viewPreferences,
-    selectedWireId,
-    multiWireIds,
-    selectedHarnessId,
-    dragging,
-  ]);
-
-  const selectedHarness = project.harnesses.find(
-    (item) => item.id === selectedHarnessId,
+  const edges = useMemo(
+    () =>
+      buildCanvasEdges(
+        project,
+        selectedWireId,
+        multiWireIds,
+        selectedHarnessId,
+        dragging,
+      ),
+    [project, selectedWireId, multiWireIds, selectedHarnessId, dragging],
   );
-  const selectedHarnessGeometry = selectedHarness?.collapsed
-    ? collapsedHarnessGeometry(project, selectedHarness.id)
-    : null;
-  const selectedWire = project.wires.find((wire) => wire.id === selectedWireId);
-  const selectedSource =
-    selectedWire && terminalPoint(project, selectedWire.source);
-  const selectedTarget =
-    selectedWire && terminalPoint(project, selectedWire.target);
-  const draftSource = draft && terminalPoint(project, draft.source);
-  const previewPoints =
-    draft && draftSource
-      ? [draftSource, ...draft.points, ...(draft.cursor ? [draft.cursor] : [])]
-      : [];
 
   function menuAt(clientX: number, clientY: number): Point {
     const bounds = wrap.current?.getBoundingClientRect();
@@ -865,278 +569,23 @@ function Canvas({
           color="#a9bdcf"
         />
         <ViewportPortal>
-          {previewPoints.length > 1 && (
-            <svg className="wire-route-preview" aria-hidden="true">
-              <path
-                d={previewPoints
-                  .map(
-                    (point, index) =>
-                      `${index ? 'L' : 'M'}${point.x} ${point.y}`,
-                  )
-                  .join(' ')}
-              />
-            </svg>
-          )}
-          {routingHarnessId && harnessDraft && (
-            <svg className="wire-route-preview" aria-hidden="true">
-              {harnessDraft.source && (
-                <circle
-                  cx={harnessDraft.source.x}
-                  cy={harnessDraft.source.y}
-                  r="5"
-                />
-              )}
-              {harnessDraft.target && (
-                <circle
-                  cx={harnessDraft.target.x}
-                  cy={harnessDraft.target.y}
-                  r="5"
-                />
-              )}
-              {harnessDraft.source &&
-                (harnessDraft.target || harnessDraft.cursor) && (
-                  <path
-                    d={
-                      wirePath(
-                        harnessDraft.source,
-                        harnessDraft.target ?? harnessDraft.cursor!,
-                        harnessDraft.trunkPoints,
-                      ).path
-                    }
-                  />
-                )}
-              {harnessDraft.source &&
-                project.wires
-                  .filter((wire) => wire.harnessId === routingHarnessId)
-                  .map((wire) => {
-                    const source = terminalPoint(
-                      project,
-                      wire.source.deviceId ===
-                        (project.harnesses.find(
-                          (item) => item.id === routingHarnessId,
-                        )?.route?.sourceDeviceId ??
-                          project.wires.find(
-                            (item) => item.harnessId === routingHarnessId,
-                          )?.source.deviceId)
-                        ? wire.source
-                        : wire.target,
-                    );
-                    const target = terminalPoint(
-                      project,
-                      wire.target.deviceId ===
-                        (project.harnesses.find(
-                          (item) => item.id === routingHarnessId,
-                        )?.route?.targetDeviceId ??
-                          project.wires.find(
-                            (item) => item.harnessId === routingHarnessId,
-                          )?.target.deviceId)
-                        ? wire.target
-                        : wire.source,
-                    );
-                    return (
-                      <g key={wire.id}>
-                        {source && (
-                          <path
-                            d={wirePath(source, harnessDraft.source!).path}
-                          />
-                        )}
-                        {target && harnessDraft.target && (
-                          <path
-                            d={wirePath(target, harnessDraft.target).path}
-                          />
-                        )}
-                      </g>
-                    );
-                  })}
-            </svg>
-          )}
-          {selectedHarnessGeometry &&
-            selectedHarness?.route &&
-            [
-              {
-                kind: 'sourceJunction' as const,
-                point: selectedHarness.route.sourceJunction,
-              },
-              {
-                kind: 'targetJunction' as const,
-                point: selectedHarness.route.targetJunction,
-              },
-              ...selectedHarness.route.trunkPoints.map((point, index) => ({
-                kind: 'trunk' as const,
-                point,
-                index,
-              })),
-              ...selectedHarness.route.branches.flatMap((branch) => [
-                ...branch.sourcePoints.map((point, index) => ({
-                  kind: 'source' as const,
-                  point,
-                  index,
-                  wireId: branch.wireId,
-                })),
-                ...branch.targetPoints.map((point, index) => ({
-                  kind: 'target' as const,
-                  point,
-                  index,
-                  wireId: branch.wireId,
-                })),
-              ]),
-            ].map((marker, markerIndex) => (
-              <button
-                key={`${marker.kind}:${'wireId' in marker ? marker.wireId : ''}:${markerIndex}`}
-                type="button"
-                className="wire-route-point nodrag nopan"
-                style={{ left: marker.point.x, top: marker.point.y }}
-                title="拖动调整；右键删除分支或主干路径点"
-                onClick={(event) => event.stopPropagation()}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setMenu({
-                    ...menuAt(event.clientX, event.clientY),
-                    harnessId: selectedHarness.id,
-                    harnessPart:
-                      marker.kind === 'sourceJunction' ||
-                      marker.kind === 'targetJunction'
-                        ? undefined
-                        : {
-                            kind: marker.kind,
-                            wireId:
-                              'wireId' in marker ? marker.wireId : undefined,
-                          },
-                    pointIndex: 'index' in marker ? marker.index : undefined,
-                  });
-                }}
-                onPointerDown={(event) => {
-                  if (event.button !== 0) return;
-                  event.stopPropagation();
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  setHarnessDragging({
-                    kind: marker.kind,
-                    wireId: 'wireId' in marker ? marker.wireId : undefined,
-                    index: 'index' in marker ? marker.index : undefined,
-                  });
-                }}
-                onPointerUp={(event) => {
-                  if (!harnessDragging) return;
-                  event.stopPropagation();
-                  updateHarnessPoint(
-                    selectedHarness.id,
-                    harnessDragging.kind,
-                    snapPointToGrid(
-                      screenToFlowPosition({
-                        x: event.clientX,
-                        y: event.clientY,
-                      }),
-                    ),
-                    harnessDragging.index,
-                    harnessDragging.wireId,
-                  );
-                  setHarnessDragging(null);
-                }}
-                onPointerCancel={() => setHarnessDragging(null)}
-              />
-            ))}
-          {selectedWire?.routePoints?.map((point, index) => (
-            <button
-              key={`${selectedWire.id}:${index}`}
-              type="button"
-              className="wire-route-point nodrag nopan"
-              style={{ left: point.x, top: point.y }}
-              title={`路径点 ${index + 1}：拖动调整，右键删除`}
-              aria-label={`路径点 ${index + 1}`}
-              onClick={(event) => event.stopPropagation()}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setMenu({
-                  ...menuAt(event.clientX, event.clientY),
-                  wireId: selectedWire.id,
-                  pointIndex: index,
-                });
-              }}
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                event.stopPropagation();
-                event.currentTarget.setPointerCapture(event.pointerId);
-                setMenu(null);
-                setDragging({
-                  wireId: selectedWire.id,
-                  pointIndex: index,
-                  point,
-                });
-              }}
-              onPointerMove={(event) => {
-                if (!dragging || dragging.pointIndex !== index) return;
-                event.stopPropagation();
-                setDragging({
-                  ...dragging,
-                  point: snapPointToGrid(
-                    screenToFlowPosition({
-                      x: event.clientX,
-                      y: event.clientY,
-                    }),
-                  ),
-                });
-              }}
-              onPointerUp={(event) => {
-                if (!dragging || dragging.pointIndex !== index) return;
-                event.stopPropagation();
-                const next = [...(selectedWire.routePoints ?? [])];
-                next[index] = snapPointToGrid(
-                  screenToFlowPosition({ x: event.clientX, y: event.clientY }),
-                );
-                onUpdateWireRoute(selectedWire.id, next);
-                setDragging(null);
-              }}
-              onPointerCancel={() => setDragging(null)}
-            />
-          ))}
-          {menu?.wireId === selectedWire?.id &&
-            menu?.pointIndex !== undefined &&
-            selectedSource &&
-            selectedTarget && (
-              <svg
-                className="wire-route-preview wire-route-delete-preview"
-                aria-hidden="true"
-              >
-                <path
-                  d={
-                    wirePath(
-                      selectedSource,
-                      selectedTarget,
-                      (selectedWire.routePoints ?? []).filter(
-                        (_, index) => index !== menu?.pointIndex,
-                      ),
-                    ).path
-                  }
-                />
-              </svg>
-            )}
-          {menu &&
-            menu.wireId === selectedWire?.id &&
-            menu.pointIndex === undefined &&
-            menu.canInsert &&
-            menu.insertPoint &&
-            menu.insertIndex !== undefined &&
-            selectedSource &&
-            selectedTarget && (
-              <svg className="wire-route-preview" aria-hidden="true">
-                <path
-                  d={
-                    wirePath(selectedSource, selectedTarget, [
-                      ...(selectedWire.routePoints ?? []).slice(
-                        0,
-                        menu.insertIndex,
-                      ),
-                      menu.insertPoint,
-                      ...(selectedWire.routePoints ?? []).slice(
-                        menu.insertIndex,
-                      ),
-                    ]).path
-                  }
-                />
-              </svg>
-            )}
+          <CanvasRouteOverlay
+            project={project}
+            selectedHarnessId={selectedHarnessId}
+            selectedWireId={selectedWireId}
+            routingHarnessId={routingHarnessId}
+            draft={draft}
+            harnessDraft={harnessDraft}
+            harnessDragging={harnessDragging}
+            setHarnessDragging={setHarnessDragging}
+            dragging={dragging}
+            setDragging={setDragging}
+            menu={menu}
+            setMenu={setMenu}
+            menuAt={menuAt}
+            updateHarnessPoint={updateHarnessPoint}
+            onUpdateWireRoute={onUpdateWireRoute}
+          />
         </ViewportPortal>
         {project.devices.length > 1 && (
           <MiniMap
@@ -1183,150 +632,17 @@ function Canvas({
           右键创建线束
         </div>
       )}
-      {menu && (
-        <div
-          className="wire-context-menu"
-          style={{ left: menu.x, top: menu.y }}
-          role="menu"
-        >
-          {menu.wireId && menu.pointIndex !== undefined ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                const wire = project.wires.find(
-                  (item) => item.id === menu.wireId,
-                );
-                if (wire)
-                  onUpdateWireRoute(
-                    wire.id,
-                    (wire.routePoints ?? []).filter(
-                      (_, index) => index !== menu?.pointIndex,
-                    ),
-                  );
-                setMenu(null);
-              }}
-            >
-              删除路径点
-            </button>
-          ) : menu.wireId ? (
-            <>
-              {multiWireIds.length >= 2 &&
-                multiWireIds.includes(menu.wireId) && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      onCreateHarness(multiWireIds);
-                      setMenu(null);
-                    }}
-                  >
-                    创建线束（{multiWireIds.length} 根）
-                  </button>
-                )}
-              <button
-                type="button"
-                role="menuitem"
-                disabled={!menu.canInsert}
-                title={
-                  menu.canInsert
-                    ? '在最近的网格点添加路径点'
-                    : '最近的网格点已有路径点，请在其他位置右键'
-                }
-                onClick={() => {
-                  const wire = project.wires.find(
-                    (item) => item.id === menu.wireId,
-                  );
-                  if (
-                    wire &&
-                    menu.insertPoint &&
-                    menu.insertIndex !== undefined
-                  ) {
-                    const next = [...(wire.routePoints ?? [])];
-                    next.splice(menu.insertIndex, 0, menu.insertPoint);
-                    onUpdateWireRoute(wire.id, next);
-                  }
-                  setMenu(null);
-                }}
-              >
-                添加路径点
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => setMenu(null)}
-              >
-                编辑导线属性
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  onDeleteWire(menu.wireId!);
-                  setMenu(null);
-                }}
-              >
-                删除导线
-              </button>
-            </>
-          ) : menu.harnessId ? (
-            <>
-              {menu.harnessPart && menu.pointIndex !== undefined && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    updateHarnessPoint(
-                      menu.harnessId!,
-                      menu.harnessPart!.kind,
-                      null,
-                      menu.pointIndex,
-                      menu.harnessPart!.wireId,
-                    );
-                    setMenu(null);
-                  }}
-                >
-                  删除路径点
-                </button>
-              )}
-              {menu.harnessPart &&
-                menu.pointIndex === undefined &&
-                menu.insertPoint && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      updateHarnessPoint(
-                        menu.harnessId!,
-                        menu.harnessPart!.kind,
-                        menu.insertPoint!,
-                        menu.insertIndex,
-                        menu.harnessPart!.wireId,
-                        true,
-                      );
-                      setMenu(null);
-                    }}
-                  >
-                    添加路径点
-                  </button>
-                )}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  onToggleHarness(menu.harnessId!);
-                  setMenu(null);
-                }}
-              >
-                {project.harnesses.find((item) => item.id === menu.harnessId)
-                  ?.collapsed
-                  ? '展开线束'
-                  : '折叠线束'}
-              </button>
-            </>
-          ) : null}
-        </div>
-      )}
+      <CanvasContextMenu
+        menu={menu}
+        project={project}
+        multiWireIds={multiWireIds}
+        onClose={() => setMenu(null)}
+        onCreateHarness={onCreateHarness}
+        onUpdateWireRoute={onUpdateWireRoute}
+        onDeleteWire={onDeleteWire}
+        onToggleHarness={onToggleHarness}
+        updateHarnessPoint={updateHarnessPoint}
+      />{' '}
       {project.devices.length === 0 && (
         <div className="canvas-empty">
           从左侧设备库拖入设备，或点击“放入画布”

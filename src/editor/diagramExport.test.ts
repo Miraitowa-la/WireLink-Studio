@@ -6,6 +6,7 @@ import {
   renderViewerHtml,
 } from './diagramExport';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
+import { deviceTerminalLayout } from './device';
 import { wirePath } from './wireGeometry';
 
 function example() {
@@ -147,6 +148,33 @@ test('exports four-side terminals, embedded image and current harness view', () 
   expect(expanded.match(/data-kind="wire"/g)).toHaveLength(4);
   expect(expanded).not.toContain('data-kind="harness"');
   expect(expanded).toContain('MISO');
+});
+
+test('SVG and print terminal centers match the shared layout after moving and resizing a device', () => {
+  const project = example();
+  const device = project.devices[0];
+  device.position = { x: 60, y: 90 };
+  device.size = { width: 360, height: 270 };
+  const expected = deviceTerminalLayout(device).map(({ point }) => point);
+  const readCenters = (svg: Element) =>
+    Array.from(
+      svg.querySelectorAll('[data-kind="device"][data-id="source"] circle'),
+    ).map((circle) => ({
+      x: Number(circle.getAttribute('cx')),
+      y: Number(circle.getAttribute('cy')),
+    }));
+  const svg = new DOMParser().parseFromString(
+    renderDiagramSvg(project).svg,
+    'image/svg+xml',
+  ).documentElement;
+  expect(readCenters(svg)).toEqual(expected);
+  const print = document.createElement('div');
+  print.innerHTML = renderPrintPages(project);
+  expect(readCenters(print.querySelector('svg')!)).toEqual(expected);
+  for (const { terminal, point } of deviceTerminalLayout(device))
+    expect(
+      terminalPoint(project, { deviceId: device.id, terminalId: terminal.id }),
+    ).toEqual(point);
 });
 
 test('exports the same manual wire route used by the canvas', () => {
