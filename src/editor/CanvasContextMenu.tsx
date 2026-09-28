@@ -11,6 +11,7 @@ export type CanvasMenu = {
   insertIndex?: number;
   insertPoint?: Point;
   canInsert?: boolean;
+  labelTarget?: { kind: 'wire' | 'harness'; id: string };
 };
 
 export function CanvasContextMenu({
@@ -22,6 +23,7 @@ export function CanvasContextMenu({
   onUpdateWireRoute,
   onDeleteWire,
   onToggleHarness,
+  onUpdateLabelOffset,
   updateHarnessPoint,
 }: {
   menu: CanvasMenu | null;
@@ -32,6 +34,11 @@ export function CanvasContextMenu({
   onUpdateWireRoute(id: string, routePoints: Point[]): void;
   onDeleteWire(id: string): void;
   onToggleHarness(id: string): void;
+  onUpdateLabelOffset(
+    kind: 'wire' | 'harness',
+    id: string,
+    offset?: Point,
+  ): void;
   updateHarnessPoint(
     harnessId: string,
     kind: 'sourceJunction' | 'targetJunction' | 'trunk' | 'source' | 'target',
@@ -48,7 +55,22 @@ export function CanvasContextMenu({
       style={{ left: menu.x, top: menu.y }}
       role="menu"
     >
-      {menu.wireId && menu.pointIndex !== undefined ? (
+      {menu.labelTarget ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onUpdateLabelOffset(
+              menu.labelTarget!.kind,
+              menu.labelTarget!.id,
+              undefined,
+            );
+            onClose();
+          }}
+        >
+          复位名称位置
+        </button>
+      ) : menu.wireId && menu.pointIndex !== undefined ? (
         <button
           type="button"
           role="menuitem"

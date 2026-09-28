@@ -59,6 +59,11 @@ interface CanvasProps {
     routePoints: Point[],
   ): boolean;
   onUpdateWireRoute(id: string, routePoints: Point[]): void;
+  onUpdateLabelOffset(
+    kind: 'wire' | 'harness',
+    id: string,
+    offset?: Point,
+  ): void;
   onDeleteWire(id: string): void;
   onAddDevice(templateId: string, position: { x: number; y: number }): void;
   onMoveDevice(id: string, position: { x: number; y: number }): void;
@@ -81,6 +86,7 @@ function Canvas({
   onUpdateHarnessRoute,
   onConnect,
   onUpdateWireRoute,
+  onUpdateLabelOffset,
   onDeleteWire,
   onAddDevice,
   onMoveDevice,
@@ -153,11 +159,40 @@ function Canvas({
   );
   const [menu, setMenu] = useState<CanvasMenu | null>(null);
   const [dragging, setDragging] = useState<WireDragging | null>(null);
+  const [labelDragging, setLabelDragging] = useState<{
+    kind: 'wire' | 'harness';
+    id: string;
+    pointerId: number;
+    start: Point;
+    anchor: Point;
+    initial: Point;
+    offset: Point;
+  } | null>(null);
   const terminalClickRef = useRef<(endpoint: WireEndpoint) => void>(() => {});
   const stableTerminalClick = useRef((endpoint: WireEndpoint) =>
     terminalClickRef.current(endpoint),
   ).current;
   const routing = draft !== null || routingHarnessId !== null;
+  function snappedLabelOffset(
+    drag: NonNullable<typeof labelDragging>,
+    clientX: number,
+    clientY: number,
+  ): Point {
+    const point = screenToFlowPosition(
+      { x: clientX, y: clientY },
+      { snapToGrid: false },
+    );
+    if (point.x === drag.start.x && point.y === drag.start.y)
+      return drag.initial;
+    const center = snapPointToGrid(
+      {
+        x: drag.anchor.x + drag.initial.x + point.x - drag.start.x,
+        y: drag.anchor.y + drag.initial.y + point.y - drag.start.y,
+      },
+      drag.kind === 'harness' ? GRID_SIZE / 2 : GRID_SIZE,
+    );
+    return { x: center.x - drag.anchor.x, y: center.y - drag.anchor.y };
+  }
   useEffect(() => {
     if (routing) setMenu(null);
   }, [routing]);
@@ -328,6 +363,7 @@ function Canvas({
         selectedHarnessId,
         dragging,
         focus,
+        labelDragging,
       ),
     [
       previewProject,
@@ -336,6 +372,7 @@ function Canvas({
       selectedHarnessId,
       dragging,
       focus,
+      labelDragging,
     ],
   );
 
@@ -464,6 +501,66 @@ function Canvas({
       onDragOver={(event) => event.preventDefault()}
       onPointerDownCapture={(event) => {
         if (
+          !routing &&
+          event.button === 0 &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          event.target instanceof Element
+        ) {
+          const label = event.target.closest('.react-flow__edge-textwrapper');
+          const edge = label?.closest('.react-flow__edge');
+          const edgeId = edge?.getAttribute('data-id');
+          if (edgeId) {
+            const kind = edgeId.startsWith('harness:') ? 'harness' : 'wire';
+            const id = kind === 'harness' ? edgeId.slice(8) : edgeId;
+            const harness =
+              kind === 'harness'
+                ? project.harnesses.find((item) => item.id === id)
+                : undefined;
+            const wire =
+              kind === 'wire'
+                ? project.wires.find((item) => item.id === id)
+                : undefined;
+            const source = wire && terminalPoint(project, wire.source);
+            const target = wire && terminalPoint(project, wire.target);
+            const anchor = harness
+              ? collapsedHarnessGeometry(project, id)?.label
+              : source && target
+                ? wirePath(source, target, wire?.routePoints).label
+                : null;
+            if (!anchor) return;
+            if (kind === 'harness') {
+              onSelectDevice(null);
+              onSelectWire(null);
+              onSelectHarness(id);
+            } else {
+              onSelectDevice(null);
+              onSelectHarness(null);
+              onSelectWire(id);
+            }
+            setMultiWireIds([]);
+            setMenu(null);
+            const initial = harness?.labelOffset ??
+              wire?.labelOffset ?? { x: 0, y: 0 };
+            setLabelDragging({
+              kind,
+              id,
+              pointerId: event.pointerId,
+              start: screenToFlowPosition(
+                { x: event.clientX, y: event.clientY },
+                { snapToGrid: false },
+              ),
+              anchor,
+              initial,
+              offset: initial,
+            });
+            event.currentTarget.setPointerCapture(event.pointerId);
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+        if (
           !routing ||
           event.button !== 1 ||
           !(event.target instanceof Element) ||
@@ -481,6 +578,17 @@ function Canvas({
         event.currentTarget.setPointerCapture?.(event.pointerId);
       }}
       onPointerMove={(event) => {
+        if (labelDragging?.pointerId === event.pointerId) {
+          setLabelDragging({
+            ...labelDragging,
+            offset: snappedLabelOffset(
+              labelDragging,
+              event.clientX,
+              event.clientY,
+            ),
+          });
+          return;
+        }
         if (middlePan.current) {
           if (event.pointerId !== middlePan.current.pointerId) return;
           const { x, y, viewport } = middlePan.current;
@@ -514,12 +622,57 @@ function Canvas({
           setDraft({ ...draft, cursor });
       }}
       onPointerUpCapture={(event) => {
+        if (labelDragging?.pointerId === event.pointerId) {
+          const offset = snappedLabelOffset(
+            labelDragging,
+            event.clientX,
+            event.clientY,
+          );
+          if (
+            offset.x !== labelDragging.initial.x ||
+            offset.y !== labelDragging.initial.y
+          )
+            onUpdateLabelOffset(labelDragging.kind, labelDragging.id, offset);
+          setLabelDragging(null);
+          event.currentTarget.releasePointerCapture(event.pointerId);
+          return;
+        }
         if (event.pointerId === middlePan.current?.pointerId)
           middlePan.current = null;
       }}
       onPointerCancelCapture={(event) => {
+        if (labelDragging?.pointerId === event.pointerId) {
+          setLabelDragging(null);
+          return;
+        }
         if (event.pointerId === middlePan.current?.pointerId)
           middlePan.current = null;
+      }}
+      onContextMenuCapture={(event) => {
+        if (routing || !(event.target instanceof Element)) return;
+        const label = event.target.closest('.react-flow__edge-textwrapper');
+        const edgeId = label
+          ?.closest('.react-flow__edge')
+          ?.getAttribute('data-id');
+        if (!edgeId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const position = menuAt(event.clientX, event.clientY);
+        if (edgeId.startsWith('harness:')) {
+          const id = edgeId.slice(8);
+          onSelectDevice(null);
+          onSelectWire(null);
+          onSelectHarness(id);
+          setMenu({ ...position, labelTarget: { kind: 'harness', id } });
+        } else {
+          onSelectDevice(null);
+          onSelectHarness(null);
+          onSelectWire(edgeId);
+          setMenu({
+            ...position,
+            labelTarget: { kind: 'wire', id: edgeId },
+          });
+        }
       }}
     >
       <ReactFlow
@@ -769,6 +922,7 @@ function Canvas({
         onUpdateWireRoute={onUpdateWireRoute}
         onDeleteWire={onDeleteWire}
         onToggleHarness={onToggleHarness}
+        onUpdateLabelOffset={onUpdateLabelOffset}
         updateHarnessPoint={updateHarnessPoint}
       />{' '}
       {project.devices.length === 0 && (

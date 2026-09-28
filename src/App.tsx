@@ -637,6 +637,10 @@ export default function App() {
               onUpdateWireRoute={(id, routePoints) =>
                 updateWire(id, { routePoints })
               }
+              onUpdateLabelOffset={(kind, id, labelOffset) => {
+                if (kind === 'wire') updateWire(id, { labelOffset });
+                else updateHarness(id, { labelOffset });
+              }}
               onDeleteWire={deleteWire}
               onAddDevice={placeDevice}
               onMoveDevice={(id, position) =>

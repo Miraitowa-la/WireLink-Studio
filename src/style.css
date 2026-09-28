@@ -474,6 +474,9 @@ p {
 .canvas-wrap .react-flow {
   background: #f7fafc;
 }
+.canvas-wrap .react-flow__edge-textwrapper {
+  cursor: grab;
+}
 .canvas-wrap .react-flow__viewport-portal {
   pointer-events: none;
 }

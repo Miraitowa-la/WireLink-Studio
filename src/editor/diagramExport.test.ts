@@ -4,7 +4,7 @@ import { renderDiagramSvg, renderPrintPages } from './diagramExport';
 import { renderViewerHtml } from './diagramViewer';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
 import { deviceTerminalLayout } from './device';
-import { wirePath } from './wireGeometry';
+import { labelPoint, wirePath } from './wireGeometry';
 
 function example() {
   const project = createEmptyProject('SPI <图纸>');
@@ -194,6 +194,54 @@ test('exports the same manual wire route used by the canvas', () => {
     .querySelector('[data-kind="wire"] .edge-label text')!;
   expect(Number(label.getAttribute('x'))).toBeCloseTo(geometry.label.x, 1);
   expect(Number(label.getAttribute('y')) - 4).toBeCloseTo(geometry.label.y, 1);
+});
+
+test('wire and collapsed harness labels keep their offsets across routes and exports', () => {
+  const project = example();
+  const wire = project.wires[0];
+  const harness = project.harnesses[0];
+  wire.labelOffset = { x: 36, y: -24 };
+  harness.labelOffset = { x: -18, y: 45 };
+  const labelIn = (svg: string | Element, kind: string, id: string) => {
+    const root =
+      typeof svg === 'string'
+        ? new DOMParser().parseFromString(svg, 'image/svg+xml')
+        : svg;
+    const text = root.querySelector(
+      `[data-kind="${kind}"][data-id="${id}"] .edge-label text`,
+    )!;
+    return {
+      x: Number(text.getAttribute('x')),
+      y: Number(text.getAttribute('y')) - 4,
+    };
+  };
+  const expectedHarness = labelPoint(
+    collapsedHarnessGeometry(project, harness.id)!.label,
+    harness.labelOffset,
+  );
+  expect(labelIn(renderDiagramSvg(project).svg, 'harness', harness.id)).toEqual(
+    expectedHarness,
+  );
+  const viewerSvg = renderViewerHtml(project).match(/<svg[\s\S]*?<\/svg>/)?.[0];
+  expect(labelIn(viewerSvg!, 'harness', harness.id)).toEqual(expectedHarness);
+  const print = document.createElement('div');
+  print.innerHTML = renderPrintPages(project);
+  expect(labelIn(print.querySelector('svg')!, 'harness', harness.id)).toEqual(
+    expectedHarness,
+  );
+  harness.collapsed = false;
+  wire.routePoints = [{ x: 300, y: 300 }];
+  const expectedWire = labelPoint(
+    wirePath(
+      terminalPoint(project, wire.source)!,
+      terminalPoint(project, wire.target)!,
+      wire.routePoints,
+    ).label,
+    wire.labelOffset,
+  );
+  const exportedWire = labelIn(renderDiagramSvg(project).svg, 'wire', wire.id);
+  expect(exportedWire.x).toBeCloseTo(expectedWire.x, 2);
+  expect(exportedWire.y).toBeCloseTo(expectedWire.y, 2);
 });
 
 test('offline viewer includes controls, selection and print layout', () => {

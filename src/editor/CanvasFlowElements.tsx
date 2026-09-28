@@ -18,7 +18,7 @@ import type {
 import { deviceTerminalLayout, getDeviceSize } from './device';
 import { collapsedHarnessGeometry } from './harnessGeometry';
 import type { FocusRelations } from './selectionFocus';
-import { wirePath, type Point } from './wireGeometry';
+import { labelPoint, wirePath, type Point } from './wireGeometry';
 const mutedStroke = '#cbd9e6';
 export type DeviceFlowNode = Node<
   {
@@ -129,7 +129,7 @@ const handleCenter = (point: Point, side: Position): Point => ({
         ? -terminalHandleRadius
         : 0),
 });
-type RoutedEdge = Edge<{ routePoints: Point[] }, 'routed'>;
+type RoutedEdge = Edge<{ routePoints: Point[]; labelOffset?: Point }, 'routed'>;
 
 function RoutedEdge({
   sourceX,
@@ -151,11 +151,12 @@ function RoutedEdge({
     handleCenter({ x: targetX, y: targetY }, targetPosition),
     data.routePoints,
   );
+  const position = labelPoint(geometry.label, data.labelOffset);
   return (
     <BaseEdge
       path={geometry.path}
-      labelX={geometry.label.x}
-      labelY={geometry.label.y}
+      labelX={position.x}
+      labelY={position.y}
       label={label}
       labelStyle={labelStyle}
       labelBgStyle={labelBgStyle}
@@ -165,7 +166,10 @@ function RoutedEdge({
   );
 }
 type HarnessEdge = Edge<
-  NonNullable<ReturnType<typeof collapsedHarnessGeometry>> & { muted: boolean },
+  NonNullable<ReturnType<typeof collapsedHarnessGeometry>> & {
+    muted: boolean;
+    labelOffset?: Point;
+  },
   'harness'
 >;
 function HarnessEdge({
@@ -177,6 +181,7 @@ function HarnessEdge({
   interactionWidth,
 }: EdgeProps<HarnessEdge>) {
   if (!data) return null;
+  const position = labelPoint(data.label, data.labelOffset);
   return (
     <>
       {data.paths.slice(1).map((item, index) => (
@@ -193,8 +198,8 @@ function HarnessEdge({
       ))}
       <BaseEdge
         path={data.trunk}
-        labelX={data.label.x}
-        labelY={data.label.y}
+        labelX={position.x}
+        labelY={position.y}
         label={label}
         labelStyle={labelStyle}
         labelBgStyle={labelBgStyle}
@@ -213,6 +218,11 @@ export function buildCanvasEdges(
   selectedHarnessId: string | null,
   dragging: { wireId: string; pointIndex: number; point: Point } | null,
   focus: FocusRelations | null = null,
+  labelDragging: {
+    kind: 'wire' | 'harness';
+    id: string;
+    offset: Point;
+  } | null = null,
 ): Edge[] {
   const visibleWires = project.wires.filter(
     (wire) =>
@@ -236,6 +246,10 @@ export function buildCanvasEdges(
                 index === dragging.pointIndex ? dragging.point : point,
               )
             : (wire.routePoints ?? []),
+        labelOffset:
+          labelDragging?.kind === 'wire' && labelDragging.id === wire.id
+            ? labelDragging.offset
+            : wire.labelOffset,
       },
       interactionWidth: 16,
       zIndex: focus ? (muted ? 0 : 2) : undefined,
@@ -271,7 +285,15 @@ export function buildCanvasEdges(
           target: first.target.deviceId,
           targetHandle: first.target.terminalId,
           type: 'harness',
-          data: { ...geometry, muted },
+          data: {
+            ...geometry,
+            muted,
+            labelOffset:
+              labelDragging?.kind === 'harness' &&
+              labelDragging.id === harness.id
+                ? labelDragging.offset
+                : harness.labelOffset,
+          },
           zIndex: focus ? (muted ? 0 : 2) : undefined,
           label:
             project.viewPreferences?.showLabels === false

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PROJECT_VERSION = 4 as const;
+export const PROJECT_VERSION = 5 as const;
 
 const id = z.string().min(1);
 const label = z.string().min(1);
@@ -91,6 +91,7 @@ export const wireSchema = z.looseObject({
   note: z.string().optional(),
   harnessId: id.optional(),
   routePoints: z.array(point).optional(),
+  labelOffset: point.optional(),
 });
 export type Wire = z.infer<typeof wireSchema>;
 
@@ -120,6 +121,7 @@ export const harnessConnectionSchema = z.looseObject({
   shielded: z.boolean().optional(),
   collapsed: z.boolean(),
   route: harnessRouteSchema.optional(),
+  labelOffset: point.optional(),
 });
 export type HarnessConnection = z.infer<typeof harnessConnectionSchema>;
 
@@ -147,10 +149,6 @@ export const projectSchema = z.looseObject({
     .optional(),
 });
 export type Project = z.infer<typeof projectSchema>;
-const previousProjectSchema = z.looseObject({
-  ...projectSchema.shape,
-  version: z.literal(3),
-});
 
 export function createEmptyProject(name = '未命名工程'): Project {
   return {
@@ -219,16 +217,13 @@ export function parseProjectFile(content: string): Project {
   if (!('version' in data)) {
     throw new Error('工程文件缺少版本号');
   }
-  if (data.version !== 3 && data.version !== PROJECT_VERSION) {
+  if (data.version !== PROJECT_VERSION) {
     throw new Error(
-      `不支持的工程版本：${String(data.version)}；当前支持版本 3、${PROJECT_VERSION}`,
+      `不支持的工程版本：${String(data.version)}；当前仅支持版本 ${PROJECT_VERSION}`,
     );
   }
 
-  const result =
-    data.version === 3
-      ? previousProjectSchema.safeParse(data)
-      : projectSchema.safeParse(data);
+  const result = projectSchema.safeParse(data);
   if (!result.success) {
     const issue = result.error.issues[0];
     const path = issue.path.join('.') || '根节点';

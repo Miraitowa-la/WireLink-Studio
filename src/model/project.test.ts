@@ -8,7 +8,7 @@ import {
 describe('project file model', () => {
   test('creates an empty versioned project', () => {
     expect(createEmptyProject('测试工程')).toMatchObject({
-      version: 4,
+      version: 5,
       name: '测试工程',
       devices: [],
       wires: [],
@@ -65,6 +65,7 @@ describe('project file model', () => {
         name: 'SPI-1',
         collapsed: true,
         color: '#369',
+        labelOffset: { x: 15, y: -30 },
         route: {
           sourceDeviceId: 'board-a',
           targetDeviceId: 'board-b',
@@ -81,6 +82,7 @@ describe('project file model', () => {
         source: { deviceId: 'board-a', terminalId: 'mosi' },
         target: { deviceId: 'board-b', terminalId: 'mosi' },
         harnessId: 'harness-1',
+        labelOffset: { x: -20, y: 40 },
       },
     ];
     project.assets = [
@@ -111,51 +113,12 @@ describe('project file model', () => {
     expect(JSON.parse(serializeProjectFile(parsed))).toEqual(withFutureFields);
   });
 
-  test('migrates v3 numeric and interim automatic dimensions to v4 without changing the data', () => {
+  test('accepts V5 and rejects older project structures', () => {
     const project = createEmptyProject();
-    project.deviceLibrary = [
-      {
-        id: 'fixed',
-        name: '固定尺寸',
-        category: '',
-        width: 240,
-        height: 180,
-        appearance: { kind: 'default' },
-        terminals: [],
-      },
-      {
-        id: 'automatic',
-        name: '自动尺寸',
-        category: '',
-        width: null,
-        height: null,
-        appearance: { kind: 'default' },
-        terminals: [],
-      },
-    ];
-    project.devices = [
-      {
-        id: 'device',
-        name: '设备',
-        position: { x: 0, y: 0 },
-        templateSnapshot: project.deviceLibrary[0],
-      },
-    ];
-    const migrated = parseProjectFile(
-      JSON.stringify({ ...project, version: 3, extra: 'keep' }),
-    );
-    expect(migrated.version).toBe(4);
-    expect(
-      migrated.deviceLibrary.map(({ width, height }) => [width, height]),
-    ).toEqual([
-      [240, 180],
-      [null, null],
-    ]);
-    expect(migrated.devices[0].templateSnapshot.width).toBe(240);
-    expect(JSON.parse(serializeProjectFile(migrated))).toMatchObject({
-      version: 4,
-      extra: 'keep',
-    });
+    expect(parseProjectFile(JSON.stringify(project)).version).toBe(5);
+    expect(() =>
+      parseProjectFile(JSON.stringify({ ...project, version: 4 })),
+    ).toThrow('当前仅支持版本 5');
   });
 
   test('rejects invalid JSON, unsupported versions and missing required fields', () => {

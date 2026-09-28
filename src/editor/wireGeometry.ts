@@ -1,5 +1,10 @@
 export type Point = { x: number; y: number };
 
+export const labelPoint = (anchor: Point, offset?: Point): Point => ({
+  x: anchor.x + (offset?.x ?? 0),
+  y: anchor.y + (offset?.y ?? 0),
+});
+
 export function wirePath(
   source: Point,
   target: Point,

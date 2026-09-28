@@ -1,7 +1,7 @@
 import type { DeviceInstance, Project, Wire } from '../model/project';
 import { deviceTerminalLayout, getDeviceSize } from './device';
 import { collapsedHarnessGeometry, terminalPoint } from './harnessGeometry';
-import { wirePath } from './wireGeometry';
+import { labelPoint, wirePath } from './wireGeometry';
 
 type Point = { x: number; y: number };
 type Diagram = { svg: string; width: number; height: number };
@@ -33,10 +33,11 @@ function edgeSvg(
   const target = terminalPoint(project, wire.target);
   if (!source || !target) return '';
   const geometry = wirePath(source, target, routePoints);
+  const position = labelPoint(geometry.label, wire.labelOffset);
   const labelMarkup =
     project.viewPreferences?.showLabels === false || !label
       ? ''
-      : `<g class="edge-label"><rect x="${n(geometry.label.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(geometry.label.y - 10)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(geometry.label.x)}" y="${n(geometry.label.y + 4)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
+      : `<g class="edge-label"><rect x="${n(position.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(position.y - 10)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(position.x)}" y="${n(position.y + 4)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
   return `<g class="diagram-object" data-kind="${kind}" data-id="${escapeXml(id)}"${attributes}><title>${text(label || id)}</title><path d="${geometry.path}" fill="none" stroke="${escapeXml(color)}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/><path d="${geometry.path}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit"/>${labelMarkup}</g>`;
 }
 
@@ -126,6 +127,35 @@ export function renderDiagramSvg(
     xValues.push(point.x);
     yValues.push(point.y);
   }
+  if (project.viewPreferences?.showLabels !== false) {
+    for (const wire of project.wires) {
+      if (!wire.labelOffset) continue;
+      if (
+        !includeHiddenHarnessViews &&
+        wire.harnessId &&
+        project.harnesses.find((item) => item.id === wire.harnessId)?.collapsed
+      )
+        continue;
+      const source = terminalPoint(project, wire.source);
+      const target = terminalPoint(project, wire.target);
+      if (!source || !target) continue;
+      const point = labelPoint(
+        wirePath(source, target, wire.routePoints).label,
+        wire.labelOffset,
+      );
+      xValues.push(point.x - 110, point.x + 110);
+      yValues.push(point.y - 10, point.y + 10);
+    }
+    for (const harness of project.harnesses) {
+      if (!harness.labelOffset) continue;
+      if (!includeHiddenHarnessViews && !harness.collapsed) continue;
+      const geometry = collapsedHarnessGeometry(project, harness.id);
+      if (!geometry) continue;
+      const point = labelPoint(geometry.label, harness.labelOffset);
+      xValues.push(point.x - 110, point.x + 110);
+      yValues.push(point.y - 10, point.y + 10);
+    }
+  }
   const minX = xValues.length ? Math.min(...xValues) : 0;
   const minY = yValues.length ? Math.min(...yValues) : 0;
   const maxX = xValues.length ? Math.max(...xValues) : 800;
@@ -165,10 +195,11 @@ export function renderDiagramSvg(
       const geometry = collapsedHarnessGeometry(project, harness.id);
       if (!geometry) return '';
       const label = `${harness.number || harness.name} · ${children.length} 芯`;
+      const position = labelPoint(geometry.label, harness.labelOffset);
       const labelMarkup =
         project.viewPreferences?.showLabels === false
           ? ''
-          : `<g class="edge-label"><rect x="${n(geometry.label.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(geometry.label.y - 10)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(geometry.label.x)}" y="${n(geometry.label.y + 4)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
+          : `<g class="edge-label"><rect x="${n(position.x - Math.min(110, label.length * 4.1 + 10))}" y="${n(position.y - 10)}" width="${n(Math.min(220, label.length * 8.2 + 20))}" height="20" rx="4" fill="#fff" stroke="#dbe4ed"/><text x="${n(position.x)}" y="${n(position.y + 4)}" text-anchor="middle" fill="#29445f" font-size="12">${text(label, 26)}</text></g>`;
       const color = escapeXml(harness.color);
       const visibility = includeHiddenHarnessViews
         ? ` data-harness-id="${escapeXml(harness.id)}" data-view="collapsed"${harness.collapsed ? '' : ' style="display:none"'}`
