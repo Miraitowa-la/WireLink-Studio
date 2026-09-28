@@ -37,6 +37,55 @@ test('undoes and redoes project edits', () => {
   expect(screen.getByRole('button', { name: '重做' })).toBeDisabled();
 });
 
+test('bulk harness expansion is one undo step from a mixed view', async () => {
+  const resizeObserver = globalThis.ResizeObserver;
+  const project = createEmptyProject('混合线束');
+  project.harnesses = ['one', 'two'].map((id, index) => ({
+    id,
+    name: id,
+    color: '#7045e5',
+    collapsed: index === 0,
+    route: {
+      sourceDeviceId: 'a',
+      targetDeviceId: 'b',
+      sourceJunction: { x: 0, y: 0 },
+      targetJunction: { x: 90, y: 0 },
+      trunkPoints: [],
+      branches: [],
+    },
+  }));
+  vi.stubGlobal('showOpenFilePicker', async () => [
+    {
+      name: 'mixed.wlproj',
+      getFile: async () => ({ text: async () => JSON.stringify(project) }),
+    },
+  ]);
+  try {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '打开工程' }));
+    expect(await screen.findByTitle('one · 已折叠')).toBeInTheDocument();
+    expect(screen.getByTitle('two · 已展开')).toBeInTheDocument();
+    const pane = await waitFor(() => {
+      const element = document.querySelector('.react-flow__pane');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    fireEvent.contextMenu(pane, {
+      clientX: 80,
+      clientY: 80,
+    });
+    fireEvent.click(screen.getByRole('menuitem', { name: '全部展开线束' }));
+    expect(screen.getByTitle('one · 已展开')).toBeInTheDocument();
+    expect(screen.getByTitle('two · 已展开')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    expect(screen.getByTitle('one · 已折叠')).toBeInTheDocument();
+    expect(screen.getByTitle('two · 已展开')).toBeInTheDocument();
+  } finally {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('ResizeObserver', resizeObserver);
+  }
+});
+
 test('offers export formats and prepares the print diagram', async () => {
   const print = vi.spyOn(window, 'print').mockImplementation(() => {});
   render(<App />);

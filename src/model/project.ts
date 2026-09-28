@@ -145,6 +145,8 @@ export const projectSchema = z.looseObject({
   viewPreferences: z
     .looseObject({
       showLabels: z.boolean(),
+      showDeviceNames: z.boolean().optional(),
+      showDeviceImages: z.boolean().optional(),
     })
     .optional(),
 });

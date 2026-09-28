@@ -641,6 +641,31 @@ export default function App() {
                 if (kind === 'wire') updateWire(id, { labelOffset });
                 else updateHarness(id, { labelOffset });
               }}
+              onToggleViewPreference={(key) =>
+                changeProject((current) => ({
+                  ...current,
+                  viewPreferences: {
+                    showLabels: current.viewPreferences?.showLabels ?? true,
+                    ...current.viewPreferences,
+                    [key]: current.viewPreferences?.[key] === false,
+                  },
+                }))
+              }
+              onSetAllHarnessCollapsed={(collapsed) =>
+                changeProject((current) =>
+                  current.harnesses.some(
+                    (harness) =>
+                      harness.route && harness.collapsed !== collapsed,
+                  )
+                    ? {
+                        ...current,
+                        harnesses: current.harnesses.map((harness) =>
+                          harness.route ? { ...harness, collapsed } : harness,
+                        ),
+                      }
+                    : current,
+                )
+              }
               onDeleteWire={deleteWire}
               onAddDevice={placeDevice}
               onMoveDevice={(id, position) =>

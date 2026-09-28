@@ -147,6 +147,52 @@ test('exports four-side terminals, embedded image and current harness view', () 
   expect(expanded).toContain('MISO');
 });
 
+test('view switches hide only requested names or images in SVG, print and offline HTML', () => {
+  const project = example();
+  project.harnesses[0].collapsed = false;
+  const base = renderDiagramSvg(project);
+  const parse = (svg: string) =>
+    new DOMParser().parseFromString(svg, 'image/svg+xml');
+  project.viewPreferences = {
+    showLabels: false,
+    showDeviceNames: false,
+    showDeviceImages: true,
+  };
+  const hiddenNames = parse(renderDiagramSvg(project).svg);
+  const source = hiddenNames.querySelector(
+    '[data-kind="device"][data-id="source"]',
+  )!;
+  expect(hiddenNames.querySelector('.edge-label')).toBeNull();
+  expect(source.querySelector('text[font-size="16"]')).toBeNull();
+  expect(source.querySelector('text[font-size="11"]')?.textContent).toBe(
+    '控制器',
+  );
+  expect(source.querySelector('image')).not.toBeNull();
+  expect(source.querySelectorAll('circle')).toHaveLength(7);
+  project.viewPreferences = {
+    showLabels: true,
+    showDeviceNames: true,
+    showDeviceImages: false,
+  };
+  const hiddenImages = renderDiagramSvg(project);
+  const withoutImage = parse(hiddenImages.svg).querySelector(
+    '[data-kind="device"][data-id="source"]',
+  )!;
+  expect(withoutImage.querySelector('image')).toBeNull();
+  expect(withoutImage.querySelector('text[font-size="16"]')?.textContent).toBe(
+    '主控板',
+  );
+  expect(withoutImage.querySelectorAll('circle')).toHaveLength(7);
+  expect(hiddenImages.width).toBe(base.width);
+  expect(hiddenImages.height).toBe(base.height);
+  const print = document.createElement('div');
+  print.innerHTML = renderPrintPages(project);
+  expect(print.querySelector('image')).toBeNull();
+  expect(renderViewerHtml(project)).not.toContain(
+    'data:image/png;base64,aGVsbG8=',
+  );
+});
+
 test('SVG and print terminal centers match the shared layout after moving and resizing a device', () => {
   const project = example();
   const device = project.devices[0];

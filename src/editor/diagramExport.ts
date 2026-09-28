@@ -63,16 +63,23 @@ function deviceSvg(
   const { width, height } = getDeviceSize(device);
   const centerX = x + width / 2;
   const centerY = y + height / 2;
-  const image = imageData(project, device);
+  const image =
+    project.viewPreferences?.showDeviceImages === false
+      ? null
+      : imageData(project, device);
   const imageMarkup = image
     ? `<clipPath id="device-clip-${index}"><rect x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" rx="10"/></clipPath><image href="${escapeXml(image)}" x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" preserveAspectRatio="${device.templateSnapshot.appearance.imageFit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet'}" clip-path="url(#device-clip-${index})"/>`
     : '';
   const category = device.templateSnapshot.category;
+  const showName = project.viewPreferences?.showDeviceNames !== false;
   const labelBgWidth = Math.min(
     width - 24,
-    Math.max(70, device.name.length * 14 + 22),
+    Math.max(70, (showName ? device.name : category).length * 14 + 22),
   );
-  const labelMarkup = `<rect x="${n(centerX - labelBgWidth / 2)}" y="${n(centerY - (category ? 25 : 15))}" width="${n(labelBgWidth)}" height="${category ? 48 : 30}" rx="5" fill="#ffffffde"/><text x="${n(centerX)}" y="${n(centerY + (category ? -2 : 5))}" text-anchor="middle" font-size="16" font-weight="700" fill="#17334f">${text(device.name, 19)}</text>${category ? `<text x="${n(centerX)}" y="${n(centerY + 16)}" text-anchor="middle" font-size="11" fill="#627b92">${text(category, 22)}</text>` : ''}`;
+  const labelMarkup =
+    showName || category
+      ? `<rect x="${n(centerX - labelBgWidth / 2)}" y="${n(centerY - (showName && category ? 25 : 15))}" width="${n(labelBgWidth)}" height="${showName && category ? 48 : 30}" rx="5" fill="#ffffffde"/>${showName ? `<text x="${n(centerX)}" y="${n(centerY + (category ? -2 : 5))}" text-anchor="middle" font-size="16" font-weight="700" fill="#17334f">${text(device.name, 19)}</text>` : ''}${category ? `<text x="${n(centerX)}" y="${n(centerY + (showName ? 16 : 5))}" text-anchor="middle" font-size="11" fill="#627b92">${text(category, 22)}</text>` : ''}`
+      : '';
   const terminals = deviceTerminalLayout(device)
     .map(({ terminal, side, count, point }) => {
       const type = project.terminalTypes.find(

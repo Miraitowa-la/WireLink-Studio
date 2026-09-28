@@ -556,6 +556,12 @@ p {
   text-align: left;
   font-size: 12px;
 }
+.wire-context-divider {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid #e6edf4;
+}
 .react-flow__minimap {
   overflow: hidden;
   border: 1px solid #cbdbe9;

@@ -76,6 +76,8 @@ test('dragging a wire label saves only its offset and right click resets it', as
     },
   ];
   const update = vi.fn();
+  const toggleView = vi.fn();
+  const setAllCollapsed = vi.fn();
   HTMLElement.prototype.setPointerCapture = vi.fn();
   HTMLElement.prototype.releasePointerCapture = vi.fn();
   render(
@@ -97,6 +99,8 @@ test('dragging a wire label saves only its offset and right click resets it', as
       onConnect={() => true}
       onUpdateWireRoute={() => {}}
       onUpdateLabelOffset={update}
+      onToggleViewPreference={toggleView}
+      onSetAllHarnessCollapsed={setAllCollapsed}
       onDeleteWire={() => {}}
       onAddDevice={() => {}}
       onMoveDevice={() => {}}
@@ -166,4 +170,18 @@ test('dragging a wire label saves only its offset and right click resets it', as
   fireEvent.contextMenu(label, { clientX: 115, clientY: 130 });
   fireEvent.click(screen.getByRole('menuitem', { name: '复位名称位置' }));
   expect(update).toHaveBeenLastCalledWith('harness', 'harness', undefined);
+
+  const pane = canvas.querySelector('.react-flow__pane')!;
+  fireEvent.contextMenu(pane, { clientX: 80, clientY: 80 });
+  expect(
+    screen.getByRole('menuitemcheckbox', { name: /显示设备名称/ }),
+  ).toHaveAttribute('aria-checked', 'true');
+  fireEvent.click(
+    screen.getByRole('menuitemcheckbox', { name: /显示设备名称/ }),
+  );
+  expect(toggleView).toHaveBeenCalledWith('showDeviceNames');
+  fireEvent.contextMenu(pane, { clientX: 80, clientY: 80 });
+  expect(screen.getByRole('menuitem', { name: '全部折叠线束' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('menuitem', { name: '全部展开线束' }));
+  expect(setAllCollapsed).toHaveBeenCalledWith(false);
 });

@@ -26,7 +26,11 @@ import {
   nodeTypes,
   type DeviceFlowNode,
 } from './CanvasFlowElements';
-import { CanvasContextMenu, type CanvasMenu } from './CanvasContextMenu';
+import {
+  CanvasContextMenu,
+  type CanvasMenu,
+  type ViewOption,
+} from './CanvasContextMenu';
 import { relatedObjects } from './selectionFocus';
 import {
   CanvasRouteOverlay,
@@ -64,6 +68,8 @@ interface CanvasProps {
     id: string,
     offset?: Point,
   ): void;
+  onToggleViewPreference(key: ViewOption): void;
+  onSetAllHarnessCollapsed(collapsed: boolean): void;
   onDeleteWire(id: string): void;
   onAddDevice(templateId: string, position: { x: number; y: number }): void;
   onMoveDevice(id: string, position: { x: number; y: number }): void;
@@ -87,6 +93,8 @@ function Canvas({
   onConnect,
   onUpdateWireRoute,
   onUpdateLabelOffset,
+  onToggleViewPreference,
+  onSetAllHarnessCollapsed,
   onDeleteWire,
   onAddDevice,
   onMoveDevice,
@@ -284,6 +292,8 @@ function Canvas({
           imageAsset: project.assets.find(
             (asset) => asset.id === device.templateSnapshot.appearance.assetId,
           ),
+          showDeviceName: project.viewPreferences?.showDeviceNames !== false,
+          showDeviceImage: project.viewPreferences?.showDeviceImages !== false,
           onTerminalClick: stableTerminalClick,
         },
       })),
@@ -291,6 +301,7 @@ function Canvas({
       project.devices,
       project.terminalTypes,
       project.assets,
+      project.viewPreferences,
       selectedDeviceId,
       stableTerminalClick,
       focus,
@@ -376,7 +387,7 @@ function Canvas({
     ],
   );
 
-  function menuAt(clientX: number, clientY: number): Point {
+  function menuAt(clientX: number, clientY: number, height = 170): Point {
     const bounds = wrap.current?.getBoundingClientRect();
     return {
       x: Math.max(
@@ -385,7 +396,10 @@ function Canvas({
       ),
       y: Math.max(
         0,
-        Math.min(clientY - (bounds?.top ?? 0), (bounds?.height ?? 170) - 170),
+        Math.min(
+          clientY - (bounds?.top ?? 0),
+          (bounds?.height ?? height) - height,
+        ),
       ),
     };
   }
@@ -830,7 +844,11 @@ function Canvas({
         }}
         onPaneContextMenu={(event) => {
           event.preventDefault();
-          setMenu(null);
+          setMenu(
+            routing
+              ? null
+              : { ...menuAt(event.clientX, event.clientY, 230), pane: true },
+          );
         }}
         onPaneClick={(event) => {
           setMenu(null);
@@ -923,6 +941,8 @@ function Canvas({
         onDeleteWire={onDeleteWire}
         onToggleHarness={onToggleHarness}
         onUpdateLabelOffset={onUpdateLabelOffset}
+        onToggleViewPreference={onToggleViewPreference}
+        onSetAllHarnessCollapsed={onSetAllHarnessCollapsed}
         updateHarnessPoint={updateHarnessPoint}
       />{' '}
       {project.devices.length === 0 && (

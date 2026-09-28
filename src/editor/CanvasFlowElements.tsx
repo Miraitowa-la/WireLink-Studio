@@ -25,6 +25,8 @@ export type DeviceFlowNode = Node<
     device: DeviceInstance;
     terminalTypes: TerminalType[];
     imageAsset?: ImageAsset;
+    showDeviceName: boolean;
+    showDeviceImage: boolean;
     onTerminalClick: (endpoint: WireEndpoint) => void;
   },
   'device'
@@ -38,7 +40,14 @@ const positions: Record<Side, Position> = {
 };
 
 function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
-  const { device, terminalTypes, imageAsset, onTerminalClick } = data;
+  const {
+    device,
+    terminalTypes,
+    imageAsset,
+    showDeviceName,
+    showDeviceImage,
+    onTerminalClick,
+  } = data;
   const { width, height } = getDeviceSize(device);
   const colors = new Map(terminalTypes.map((type) => [type.id, type.color]));
 
@@ -47,18 +56,21 @@ function DeviceNode({ data, selected }: NodeProps<DeviceFlowNode>) {
       className={`device-node${selected ? ' device-node-selected' : ''}`}
       style={{ width, height }}
     >
-      {device.templateSnapshot.appearance.kind === 'image' && imageAsset && (
-        <img
-          className="device-node-image"
-          src={imageAsset.data}
-          alt=""
-          style={{
-            objectFit: device.templateSnapshot.appearance.imageFit ?? 'contain',
-          }}
-        />
-      )}
+      {showDeviceImage &&
+        device.templateSnapshot.appearance.kind === 'image' &&
+        imageAsset && (
+          <img
+            className="device-node-image"
+            src={imageAsset.data}
+            alt=""
+            style={{
+              objectFit:
+                device.templateSnapshot.appearance.imageFit ?? 'contain',
+            }}
+          />
+        )}
       <div className="device-node-center">
-        <strong>{device.name}</strong>
+        {showDeviceName && <strong>{device.name}</strong>}
         {device.templateSnapshot.category && (
           <small>{device.templateSnapshot.category}</small>
         )}

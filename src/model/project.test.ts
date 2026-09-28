@@ -137,11 +137,19 @@ describe('project file model', () => {
   test('accepts a project saved with the former wire style preference', () => {
     const project = {
       ...createEmptyProject(),
-      viewPreferences: { wireStyle: 'curve', showLabels: true },
+      viewPreferences: {
+        wireStyle: 'curve',
+        showLabels: false,
+        showDeviceNames: false,
+        showDeviceImages: false,
+      },
     };
-    expect(
-      parseProjectFile(JSON.stringify(project)).viewPreferences?.showLabels,
-    ).toBe(true);
+    expect(parseProjectFile(JSON.stringify(project)).viewPreferences).toEqual(
+      project.viewPreferences,
+    );
+    expect(JSON.parse(serializeProjectFile(project))).toMatchObject({
+      viewPreferences: project.viewPreferences,
+    });
   });
 
   test('rejects invalid terminal layout and duplicate IDs', () => {

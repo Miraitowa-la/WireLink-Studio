@@ -1,6 +1,14 @@
 import type { Project } from '../model/project';
 import type { Point } from './wireGeometry';
 
+export type ViewOption = 'showLabels' | 'showDeviceNames' | 'showDeviceImages';
+
+const viewOptions: { key: ViewOption; label: string }[] = [
+  { key: 'showLabels', label: '显示导线／线束名称' },
+  { key: 'showDeviceNames', label: '显示设备名称' },
+  { key: 'showDeviceImages', label: '显示设备图片' },
+];
+
 export type CanvasMenu = {
   x: number;
   y: number;
@@ -12,6 +20,7 @@ export type CanvasMenu = {
   insertPoint?: Point;
   canInsert?: boolean;
   labelTarget?: { kind: 'wire' | 'harness'; id: string };
+  pane?: true;
 };
 
 export function CanvasContextMenu({
@@ -24,6 +33,8 @@ export function CanvasContextMenu({
   onDeleteWire,
   onToggleHarness,
   onUpdateLabelOffset,
+  onToggleViewPreference,
+  onSetAllHarnessCollapsed,
   updateHarnessPoint,
 }: {
   menu: CanvasMenu | null;
@@ -39,6 +50,8 @@ export function CanvasContextMenu({
     id: string,
     offset?: Point,
   ): void;
+  onToggleViewPreference(key: ViewOption): void;
+  onSetAllHarnessCollapsed(collapsed: boolean): void;
   updateHarnessPoint(
     harnessId: string,
     kind: 'sourceJunction' | 'targetJunction' | 'trunk' | 'source' | 'target',
@@ -55,7 +68,55 @@ export function CanvasContextMenu({
       style={{ left: menu.x, top: menu.y }}
       role="menu"
     >
-      {menu.labelTarget ? (
+      {menu.pane ? (
+        <>
+          {viewOptions.map(({ key, label }) => {
+            const visible = project.viewPreferences?.[key] !== false;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={visible}
+                onClick={() => {
+                  onToggleViewPreference(key);
+                  onClose();
+                }}
+              >
+                {visible ? '✓ ' : '　'}
+                {label}
+              </button>
+            );
+          })}
+          <hr className="wire-context-divider" />
+          <button
+            type="button"
+            role="menuitem"
+            disabled={
+              !project.harnesses.some((item) => item.route && item.collapsed)
+            }
+            onClick={() => {
+              onSetAllHarnessCollapsed(false);
+              onClose();
+            }}
+          >
+            全部展开线束
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={
+              !project.harnesses.some((item) => item.route && !item.collapsed)
+            }
+            onClick={() => {
+              onSetAllHarnessCollapsed(true);
+              onClose();
+            }}
+          >
+            全部折叠线束
+          </button>
+        </>
+      ) : menu.labelTarget ? (
         <button
           type="button"
           role="menuitem"
