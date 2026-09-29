@@ -105,6 +105,11 @@ export default function App() {
 
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && editor) {
+        event.preventDefault();
+        setEditor(null);
+        return;
+      }
       const target = event.target;
       const editing =
         target instanceof HTMLElement &&
@@ -128,6 +133,11 @@ export default function App() {
         !editing &&
         project &&
         !routingHarnessId &&
+        target instanceof Element &&
+        target.closest('.canvas-wrap') &&
+        !target.closest(
+          'button, a[href], summary, [role="button"], [role="menuitem"]',
+        ) &&
         (event.key === 'Delete' || event.key === 'Backspace')
       ) {
         if (selectedHarnessId || selectedWireId || selectedId) {

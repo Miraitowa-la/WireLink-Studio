@@ -206,51 +206,109 @@ function Canvas({
   }, [routing]);
 
   useEffect(() => {
-    if (!routing) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (
-        event.target instanceof HTMLElement &&
-        (['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName) ||
-          event.target.isContentEditable)
+        event.key === 'Escape' &&
+        document.querySelector('[role="dialog"][aria-modal="true"]')
       )
         return;
+      const target = event.target;
+      const editing =
+        target instanceof HTMLElement &&
+        (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
+          target.isContentEditable);
+      if (event.key === 'Escape' && (!editing || menu)) {
+        if (menu) setMenu(null);
+        else if (routing) {
+          setDraft(null);
+          onCancelHarnessRoute();
+        } else if (
+          selectedDeviceId ||
+          selectedWireId ||
+          selectedHarnessId ||
+          multiWireIds.length
+        ) {
+          setMultiWireIds([]);
+          onSelectDevice(null);
+          onSelectWire(null);
+          onSelectHarness(null);
+        } else return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (!routing || editing) return;
+      const undoPoint = () => {
+        if (routingHarnessId)
+          setHarnessDraft((current) =>
+            current
+              ? {
+                  ...current,
+                  points: current.points.slice(0, -1),
+                  cursor: undefined,
+                }
+              : null,
+          );
+        else
+          setDraft((current) =>
+            current
+              ? {
+                  ...current,
+                  points: current.points.slice(0, -1),
+                  cursor: null,
+                }
+              : null,
+          );
+      };
       if (
-        event.target instanceof Element &&
-        event.target.closest(
+        (event.ctrlKey || event.metaKey) &&
+        ['z', 'y'].includes(event.key.toLowerCase())
+      ) {
+        if (event.key.toLowerCase() === 'z' && !event.shiftKey) undoPoint();
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (event.key === 'Delete') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (
+        target instanceof Element &&
+        target.closest(
           'button, a[href], summary, [role="button"], [role="menuitem"]',
-        ) &&
-        event.key !== 'Escape'
+        )
       )
         return;
-      if (event.key === 'Escape') {
-        setDraft(null);
-        onCancelHarnessRoute();
-      } else if (
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (
         routingHarnessId &&
         event.key === 'Enter' &&
-        event.target instanceof Node &&
-        wrap.current?.contains(event.target)
+        target instanceof Node &&
+        wrap.current?.contains(target)
       )
         completeHarnessDraftRef.current();
-      else if (routingHarnessId && event.key === 'Backspace')
-        setHarnessDraft((current) => {
-          if (!current) return null;
-          return {
-            ...current,
-            points: current.points.slice(0, -1),
-            cursor: undefined,
-          };
-        });
-      else if (event.key === 'Backspace')
-        setDraft((current) =>
-          current ? { ...current, points: current.points.slice(0, -1) } : null,
-        );
+      else if (event.key === 'Backspace') undoPoint();
       else return;
       event.preventDefault();
+      event.stopImmediatePropagation();
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [routing, routingHarnessId, onCancelHarnessRoute]);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [
+    routing,
+    routingHarnessId,
+    onCancelHarnessRoute,
+    menu,
+    selectedDeviceId,
+    selectedWireId,
+    selectedHarnessId,
+    multiWireIds.length,
+    onSelectDevice,
+    onSelectWire,
+    onSelectHarness,
+  ]);
 
   terminalClickRef.current = (endpoint) => {
     setMenu(null);
@@ -707,6 +765,7 @@ function Canvas({
         zoomOnDoubleClick={!routing}
         onNodeClick={(_, node) => {
           if (routing) return;
+          wrap.current?.focus();
           setMultiWireIds([]);
           onSelectWire(null);
           onSelectHarness(null);
@@ -719,6 +778,7 @@ function Canvas({
               addRoutingPoint(event.clientX, event.clientY);
             return;
           }
+          wrap.current?.focus();
           onSelectDevice(null);
           if (edge.id.startsWith('harness:')) {
             setMultiWireIds([]);
