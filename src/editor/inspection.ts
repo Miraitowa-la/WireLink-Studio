@@ -33,6 +33,53 @@ export interface HarnessRow {
   wireId?: string;
 }
 
+export interface WireRow {
+  id: string;
+  sourceDevice: string;
+  sourceTerminal: string;
+  targetDevice: string;
+  targetTerminal: string;
+  number: string;
+  name: string;
+  harness: string;
+  harnessNumber: string;
+  note: string;
+}
+
+export const wireListColumns: { key: keyof WireRow; label: string }[] = [
+  { key: 'sourceDevice', label: '从设备' },
+  { key: 'sourceTerminal', label: '从端子' },
+  { key: 'targetDevice', label: '到设备' },
+  { key: 'targetTerminal', label: '到端子' },
+  { key: 'number', label: '线号' },
+  { key: 'name', label: '导线名称' },
+  { key: 'harness', label: '所属线束' },
+  { key: 'harnessNumber', label: '线束编号' },
+  { key: 'note', label: '备注' },
+];
+
+export function wireRows(project: Project): WireRow[] {
+  return project.wires.map((wire) => {
+    const source = endpointInfo(project, wire.source);
+    const target = endpointInfo(project, wire.target);
+    const harness = project.harnesses.find(
+      (item) => item.id === wire.harnessId,
+    );
+    return {
+      id: wire.id,
+      sourceDevice: source.device?.name ?? wire.source.deviceId,
+      sourceTerminal: source.terminal?.label ?? wire.source.terminalId,
+      targetDevice: target.device?.name ?? wire.target.deviceId,
+      targetTerminal: target.terminal?.label ?? wire.target.terminalId,
+      number: wire.number ?? '',
+      name: wire.name ?? '',
+      harness: harness?.name ?? wire.harnessId ?? '',
+      harnessNumber: harness?.number ?? '',
+      note: wire.note ?? '',
+    };
+  });
+}
+
 export function harnessRows(project: Project): HarnessRow[] {
   return project.harnesses.flatMap((harness) =>
     project.wires
@@ -278,28 +325,49 @@ export function csvForTerminalRows(rows: TerminalRow[]): string {
     'harnessNumber',
     'conductor',
   ];
+  return csvRows(
+    [
+      '设备',
+      '端子',
+      '端子类型',
+      '所在边',
+      '连接对象',
+      '线号',
+      '线束编号',
+      '芯线名称',
+    ],
+    rows.map((row) => columns.map((column) => row[column])),
+  );
+}
+
+export function csvForWireRows(rows: WireRow[]): string {
+  return csvRows(
+    wireListColumns.map((column) => column.label),
+    rows.map((row) => wireListColumns.map((column) => row[column.key])),
+  );
+}
+
+export function csvForHarnessRows(rows: HarnessRow[]): string {
+  return csvRows(
+    ['线束编号', '芯线', '源设备/端子', '目标设备/端子', '状态', '备注'],
+    rows.map((row) => [
+      row.number,
+      row.conductor,
+      row.source,
+      row.target,
+      row.status,
+      row.note,
+    ]),
+  );
+}
+
+function csvRows(headers: string[], rows: string[][]): string {
   const escape = (value: string) => {
-    const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+    const safe = /^[=+\-@\t\r\n]/.test(value) ? `'${value}` : value;
     return `"${safe.replaceAll('"', '""')}"`;
   };
   return (
     '\uFEFF' +
-    [
-      [
-        '设备',
-        '端子',
-        '端子类型',
-        '所在边',
-        '连接对象',
-        '线号',
-        '线束编号',
-        '芯线名称',
-      ]
-        .map(escape)
-        .join(','),
-      ...rows.map((row) =>
-        columns.map((column) => escape(row[column])).join(','),
-      ),
-    ].join('\r\n')
+    [headers, ...rows].map((row) => row.map(escape).join(',')).join('\r\n')
   );
 }

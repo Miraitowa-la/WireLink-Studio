@@ -3,9 +3,13 @@ import type { Project } from '../model/project';
 import { safeProjectName } from './projectFiles';
 import {
   csvForTerminalRows,
+  csvForWireRows,
+  csvForHarnessRows,
   inspectProject,
   harnessRows,
   terminalRows,
+  wireRows,
+  wireListColumns,
   type ValidationIssue,
 } from './inspection';
 
@@ -20,13 +24,21 @@ export default function InspectionPanel({
   onSelectIssue,
   onSelectWire,
 }: Props) {
-  const [tab, setTab] = useState<'validation' | 'table' | 'harness'>(
+  const [tab, setTab] = useState<'validation' | 'table' | 'harness' | 'wire'>(
     'validation',
   );
   const [query, setQuery] = useState('');
   const issues = useMemo(() => inspectProject(project), [project]);
   const rows = useMemo(() => terminalRows(project), [project]);
   const harnessDetails = useMemo(() => harnessRows(project), [project]);
+  const wireDetails = useMemo(() => wireRows(project), [project]);
+  const filteredWires = wireDetails.filter((row) =>
+    wireListColumns
+      .map((column) => row[column.key])
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(query.trim().toLocaleLowerCase()),
+  );
   const filtered = rows.filter((row) =>
     [
       row.device,
@@ -48,15 +60,25 @@ export default function InspectionPanel({
       .toLocaleLowerCase()
       .includes(query.trim().toLocaleLowerCase()),
   );
+  const exportCount =
+    tab === 'wire'
+      ? filteredWires.length
+      : tab === 'harness'
+        ? filteredHarness.length
+        : filtered.length;
 
   function exportCsv() {
-    const blob = new Blob([csvForTerminalRows(filtered)], {
-      type: 'text/csv;charset=utf-8',
-    });
+    const [content, name] =
+      tab === 'wire'
+        ? [csvForWireRows(filteredWires), '从到接线清单']
+        : tab === 'harness'
+          ? [csvForHarnessRows(filteredHarness), '线束明细表']
+          : [csvForTerminalRows(filtered), '端子接线表'];
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${safeProjectName(project.name)}-端子接线表.csv`;
+    link.download = `${safeProjectName(project.name)}-${name}.csv`;
     document.body.append(link);
     link.click();
     link.remove();
@@ -82,12 +104,19 @@ export default function InspectionPanel({
         </button>
         <button
           type="button"
+          aria-pressed={tab === 'wire'}
+          onClick={() => setTab('wire')}
+        >
+          从／到接线清单 ({wireDetails.length})
+        </button>
+        <button
+          type="button"
           aria-pressed={tab === 'harness'}
           onClick={() => setTab('harness')}
         >
           线束明细表 ({harnessDetails.length})
         </button>
-        {(tab === 'table' || tab === 'harness') && (
+        {tab !== 'validation' && (
           <div className="inspection-tools">
             <input
               aria-label="筛选接线表"
@@ -95,11 +124,9 @@ export default function InspectionPanel({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
-            {tab === 'table' && (
-              <button type="button" onClick={exportCsv}>
-                导出 CSV
-              </button>
-            )}
+            <button type="button" onClick={exportCsv} title="导出为 CSV">
+              导出当前筛选结果（{exportCount} 条）
+            </button>
           </div>
         )}
       </div>
@@ -125,6 +152,43 @@ export default function InspectionPanel({
               ))}
             </ul>
           )
+        ) : tab === 'wire' ? (
+          <div className="terminal-table-wrap">
+            <table className="terminal-table" aria-label="从／到接线清单">
+              <thead>
+                <tr>
+                  {wireListColumns.map((column) => (
+                    <th key={column.key}>{column.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredWires.map((row) => (
+                  <tr key={row.id}>
+                    {wireListColumns.map((column, index) => (
+                      <td key={column.key}>
+                        {index === 0 ? (
+                          <button
+                            type="button"
+                            className="table-link"
+                            onClick={() => onSelectWire(row.id)}
+                            aria-label={`定位导线 ${row.number || row.name || row.id}`}
+                          >
+                            {row[column.key] || '—'}
+                          </button>
+                        ) : (
+                          row[column.key] || '—'
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!filteredWires.length && (
+              <p className="empty-hint">没有匹配的导线记录</p>
+            )}
+          </div>
         ) : tab === 'harness' ? (
           <div className="terminal-table-wrap">
             <table className="terminal-table">
