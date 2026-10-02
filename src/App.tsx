@@ -60,6 +60,15 @@ export default function App() {
     projectName,
     setProjectName,
     dirty,
+    draftChecked,
+    draftState,
+    localDrafts,
+    draftPanelOpen,
+    setDraftPanelOpen,
+    draftBusy,
+    refreshDrafts,
+    restoreDraft,
+    deleteDraft,
     status,
     setStatus,
     fileInput,
@@ -472,16 +481,105 @@ export default function App() {
             />
           </label>
           <div className="welcome-actions">
-            <button type="button" className="primary" onClick={newProject}>
+            <button
+              type="button"
+              className="primary"
+              onClick={newProject}
+              disabled={!draftChecked || draftBusy !== null}
+            >
               新建工程
             </button>
-            <button type="button" onClick={() => void openProject()}>
+            <button
+              type="button"
+              onClick={() => void openProject()}
+              disabled={!draftChecked || draftBusy !== null}
+            >
               打开工程
             </button>
           </div>
           <p className="hint">
-            工程保存在您选择的本机文件中。新建工程从空画布开始。
+            未保存的修改会自动保留为本机草稿；请使用“保存”生成或更新工程文件。
           </p>
+          {!draftChecked && <p className="hint">正在检查本机草稿…</p>}
+          {draftChecked && (
+            <section className="draft-recovery" aria-label="本机草稿">
+              {draftPanelOpen ? (
+                <>
+                  <h2>本机草稿</h2>
+                  <p className="hint">
+                    选择需要恢复的工程。暂不恢复会保留全部草稿；恢复也保留原草稿，删除须单独确认。
+                  </p>
+                  <ul className="draft-list">
+                    {localDrafts.map((draft) => (
+                      <li key={draft.id}>
+                        <strong>
+                          {typeof draft.project?.name === 'string'
+                            ? draft.project.name
+                            : '未知工程'}
+                        </strong>
+                        <time
+                          dateTime={
+                            Number.isFinite(draft.savedAt)
+                              ? new Date(draft.savedAt).toISOString()
+                              : undefined
+                          }
+                        >
+                          {new Date(draft.savedAt).toLocaleString()}
+                        </time>
+                        {draft.error && (
+                          <p className="status-error">
+                            无法恢复：{draft.error}
+                          </p>
+                        )}
+                        <div className="draft-actions">
+                          <button
+                            type="button"
+                            disabled={draftBusy !== null || !!draft.error}
+                            onClick={() => void restoreDraft(draft.id)}
+                          >
+                            恢复
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            disabled={draftBusy !== null}
+                            onClick={() => void deleteDraft(draft.id)}
+                          >
+                            删除草稿
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  {!localDrafts.length && (
+                    <p className="hint">
+                      暂无可恢复草稿；其他标签页正在使用的草稿不会列出。
+                    </p>
+                  )}
+                  <div className="draft-actions">
+                    <button
+                      type="button"
+                      disabled={draftBusy !== null}
+                      onClick={() => setDraftPanelOpen(false)}
+                    >
+                      暂不恢复
+                    </button>
+                    <button
+                      type="button"
+                      disabled={draftBusy !== null}
+                      onClick={() => void refreshDrafts()}
+                    >
+                      刷新草稿列表
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button type="button" onClick={() => void refreshDrafts()}>
+                  查看本机草稿
+                </button>
+              )}
+            </section>
+          )}
           {status && (
             <p
               role={status.kind === 'error' ? 'alert' : 'status'}
@@ -513,7 +611,15 @@ export default function App() {
               }))
             }
           />
-          <span className="dirty-indicator">{dirty ? '未保存' : '已保存'}</span>
+          <span className="dirty-indicator">
+            {!dirty
+              ? '已保存'
+              : draftState === 'saved'
+                ? '草稿已自动保存 · 文件未保存'
+                : draftState === 'error'
+                  ? '草稿自动保存失败 · 文件未保存'
+                  : '草稿保存中 · 文件未保存'}
+          </span>
         </div>
         <nav className="toolbar-actions" aria-label="工程操作">
           <button

@@ -176,6 +176,41 @@ p {
 .welcome-card .status {
   margin-top: 15px;
 }
+.draft-recovery {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #d4e0ec;
+}
+.draft-recovery h2 {
+  font-size: 17px;
+}
+.draft-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+  display: grid;
+  gap: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.draft-list li {
+  border: 1px solid #d4e0ec;
+  border-radius: 10px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.draft-list time {
+  display: block;
+  color: #667d92;
+  font-size: 12px;
+  margin: 6px 0;
+}
+.draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
 
 .editor-shell {
   display: grid;
